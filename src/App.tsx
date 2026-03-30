@@ -11,7 +11,6 @@ import { useDashboardData } from './hooks/useDashboardData';
 import { useDetailLogs } from './hooks/useDetailLogs';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
-import { Footer } from './components/layout/Footer';
 
 type ScreenName = 'projects' | 'deployments' | 'settings' | 'detail' | 'deploy';
 
@@ -242,11 +241,6 @@ export default function App() {
           </AnimatePresence>
         </main>
 
-        <Footer
-          integrationError={integrationError}
-          githubConfigured={githubConfigured}
-          availableRegions={availableRegions}
-        />
       </div>
     </div>
   );
