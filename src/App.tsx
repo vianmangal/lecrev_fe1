@@ -4,7 +4,7 @@ import { AuthScreen } from './AuthScreen';
 import { DeploymentsScreen, ProjectsScreen } from './Screens';
 import { Deployment, Project } from './types';
 
-const HERO_PREFIX_TEXT = 'Lecrev is the best way to implement...';
+const HERO_PREFIX_TEXT = 'is the best way to implement...';
 const FLIP_WORDS = ['workflows.', 'functions.', 'websites.', 'features.'];
 const FLIP_WORD_WIDTH_CH = Math.max(...FLIP_WORDS.map((word) => word.length));
 const FLIP_ANIMATION_MS = 520;
@@ -144,7 +144,6 @@ export default function App() {
       </button>
 
       <main className="relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(84,218,241,0.12),transparent_45%)]" />
         <div className="pointer-events-none absolute left-4 top-5 z-10 flex items-center gap-2.5 text-white sm:left-6 lg:left-8" aria-hidden="true">
           <span className="shrink-0">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -157,6 +156,14 @@ export default function App() {
           <div className="w-full py-24 sm:py-28">
             <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
               <h1 className="mx-auto min-h-[5.75rem] max-w-[1200px] text-center text-2xl font-medium leading-tight tracking-[-0.02em] text-white sm:min-h-[6.75rem] sm:text-4xl md:min-h-[8rem] md:text-5xl lg:whitespace-nowrap xl:max-w-[1400px]">
+                <span className="mr-[0.24em] inline-flex items-center gap-[0.18em] align-baseline">
+                  <span className="relative top-[0.02em] shrink-0" aria-hidden="true">
+                    <svg width="0.78em" height="0.78em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M2 4L12 21L22 4H2Z" fill="currentColor" />
+                    </svg>
+                  </span>
+                  <span className="font-black tracking-tighter uppercase">LECREV</span>
+                </span>
                 {typedText}
                 {typingComplete && (
                   <>
