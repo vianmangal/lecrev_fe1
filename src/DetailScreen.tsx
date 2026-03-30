@@ -6,14 +6,13 @@ import { Deployment, LogEntry, Project } from './types';
 
 interface DetailScreenProps {
   project: Project | null;
-  onBack: () => void;
   activeTab: string;
   setActiveTab: (t: string) => void;
   deployments?: Deployment[];
   logs?: LogEntry[];
 }
 
-export const DetailScreen: React.FC<DetailScreenProps> = ({ project, onBack, activeTab, setActiveTab, deployments, logs }) => {
+export const DetailScreen: React.FC<DetailScreenProps> = ({ project, activeTab, setActiveTab, deployments, logs }) => {
   const p = project || { id: 'core-platform', name: 'Core Platform', url: 'core-platform.lecrev.app', status: 'Production' as const, instances: '24' };
   const TABS = ['deployments', 'logs', 'settings'];
   const deploymentRows = deployments && deployments.length > 0 ? deployments : DEPLOYS;
@@ -43,13 +42,6 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({ project, onBack, act
       transition={{ duration: 0.22, ease: 'easeOut' }}
       className="flex-1 overflow-y-auto p-12"
     >
-      <button
-        onClick={onBack}
-        className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.15em] text-sub bg-transparent border-none cursor-pointer mb-12 p-0 hover:text-white transition-colors"
-      >
-        ← Projects / {p.name}
-      </button>
-
       <div className="flex items-start justify-between mb-12">
         <div>
           <h2 className="text-4xl tracking-tighter font-normal mb-3">

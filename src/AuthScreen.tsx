@@ -58,6 +58,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signin', 
               exit={{ opacity: 0, x: mode === 'signin' ? 10 : -10 }}
               transition={{ duration: 0.2 }}
             >
+              {mode === 'register' && (
+                <button
+                  onClick={() => setMode('signin')}
+                  className="text-[10px] uppercase tracking-[0.15em] text-sub hover:text-white transition-colors bg-transparent border-none cursor-pointer mb-5 p-0"
+                >
+                  ← Back to Sign In
+                </button>
+              )}
+
               <h2 className="text-lg uppercase tracking-tight mb-8">
                 {mode === 'signin' ? 'Sign In' : 'Create Account'}
               </h2>

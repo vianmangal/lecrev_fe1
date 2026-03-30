@@ -610,6 +610,13 @@ export default function App() {
                   animate={{ opacity: 1, x: 0 }}
                   className="flex items-center gap-2 text-sub text-sm"
                 >
+                  <button
+                    onClick={() => go('projects')}
+                    className="text-sub hover:text-white transition-colors bg-transparent border-none cursor-pointer p-0 text-lg leading-none"
+                    aria-label="Back to Projects"
+                  >
+                    ←
+                  </button>
                   <span className="opacity-50">Projects</span>
                   <span className="opacity-30">/</span>
                   <span className="text-white font-medium">{activeProj.name}</span>
@@ -665,7 +672,6 @@ export default function App() {
               <DetailScreen
                 key="detail"
                 project={activeProj}
-                onBack={() => go('projects')}
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
                 deployments={detailDeployments}
