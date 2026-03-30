@@ -148,10 +148,10 @@ export default function App() {
   return (
     <div className="flex h-screen bg-bg text-white overflow-hidden font-sans">
       <AnimatePresence>
-        {authMode && (
+        {(authRequired || authMode) && (
           <AuthScreen
             initialMode={authMode ?? 'signin'}
-            required={false}
+            required={authRequired}
             githubConfigured={githubConfigured === true}
             onSuccess={() => {
               void refetchSession();
