@@ -77,6 +77,7 @@ export interface JobResult {
   region: string;
   startedAt: string;
   finishedAt: string;
+  latencyMs: number;
 }
 
 export interface ExecutionJob {
@@ -129,6 +130,7 @@ export interface ExecutionResultSummary {
   region: string;
   startedAt: string;
   finishedAt: string;
+  latencyMs: number;
   logsReady: boolean;
   outputReady: boolean;
 }
