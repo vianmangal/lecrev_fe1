@@ -18,7 +18,7 @@ export const GhostBtn: React.FC<GhostBtnProps> = ({ onClick, children, danger = 
       onClick={onClick}
       disabled={disabled}
       className={`
-        border transition-all duration-150 cursor-pointer uppercase tracking-[0.15em] text-[9px] whitespace-nowrap
+        border transition-all duration-150 cursor-pointer uppercase tracking-[0.15em] text-[9px] whitespace-normal sm:whitespace-nowrap
         ${small ? "px-2.5 py-1" : "px-4 py-1.5"}
         ${danger 
           ? "border-red-500/30 text-red-500/70 hover:border-red-500 hover:text-red-500" 
