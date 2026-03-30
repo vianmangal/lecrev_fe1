@@ -1,7 +1,8 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { StatusBadge, CyanBtn, TextInput } from './components/UI';
+import { StatusBadge, CyanBtn, GhostBtn, TextInput } from './components/UI';
 import { Deployment, LogEntry, Project } from './types';
+import { HTTPTrigger } from './api';
 
 interface DetailScreenProps {
   project: Project | null;
@@ -9,13 +10,28 @@ interface DetailScreenProps {
   setActiveTab: (t: string) => void;
   deployments?: Deployment[];
   logs?: LogEntry[];
+  functionURLs?: HTTPTrigger[];
+  functionURLBusy?: boolean;
+  functionURLError?: string | null;
+  onCreateFunctionURL?: () => void;
 }
 
-export const DetailScreen: React.FC<DetailScreenProps> = ({ project, activeTab, setActiveTab, deployments = [], logs = [] }) => {
+export const DetailScreen: React.FC<DetailScreenProps> = ({
+  project,
+  activeTab,
+  setActiveTab,
+  deployments = [],
+  logs = [],
+  functionURLs = [],
+  functionURLBusy = false,
+  functionURLError = null,
+  onCreateFunctionURL,
+}) => {
   if (!project) return null;
 
   const TABS = ['deployments', 'logs', 'settings'];
   const latestDeploy = deployments[0];
+  const latestFunctionURL = functionURLs[0];
 
   const infoRows: Array<[string, string]> = [
     ['Branch', latestDeploy?.branch ?? '-'],
@@ -54,6 +70,59 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({ project, activeTab, 
             <p className="text-[13px]">{v}</p>
           </div>
         ))}
+      </div>
+
+      <div className="border border-border bg-surface/40 p-4 sm:p-5 mb-8 md:mb-12">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase tracking-[0.15em] text-cyan-primary mb-2">Function URL</p>
+            {latestFunctionURL ? (
+              <>
+                <p className="text-sm text-white break-all">{latestFunctionURL.url}</p>
+                <p className="text-[10px] uppercase tracking-[0.12em] text-sub mt-2">
+                  Public HTTP entrypoint for the latest deployment
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-white">No public URL generated yet.</p>
+                <p className="text-[10px] uppercase tracking-[0.12em] text-sub mt-2">
+                  Create one to invoke this function over HTTP like a Lambda Function URL
+                </p>
+              </>
+            )}
+            {functionURLError && (
+              <p className="text-[10px] uppercase tracking-[0.12em] text-red-500 mt-3">{functionURLError}</p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {latestFunctionURL && (
+              <>
+                <GhostBtn
+                  small
+                  onClick={() => {
+                    window.navigator.clipboard.writeText(latestFunctionURL.url).catch(() => undefined);
+                  }}
+                >
+                  Copy URL
+                </GhostBtn>
+                <GhostBtn
+                  small
+                  onClick={() => {
+                    window.open(latestFunctionURL.url, '_blank', 'noopener,noreferrer');
+                  }}
+                >
+                  Open URL
+                </GhostBtn>
+              </>
+            )}
+            {onCreateFunctionURL && (
+              <CyanBtn onClick={onCreateFunctionURL} className="px-4 py-1.5" disabled={functionURLBusy}>
+                {latestFunctionURL ? 'Refresh URL' : functionURLBusy ? 'Creating...' : 'Generate URL'}
+              </CyanBtn>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="border-b border-border flex gap-8 mb-8 relative">

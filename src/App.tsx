@@ -12,8 +12,10 @@ import {
   ApiConnection,
   DeployRequestInput,
   DeploymentSummary,
+  HTTPTrigger,
   LiveDeploymentRecord,
   ProjectRecord,
+  createHTTPTrigger,
   createFunctionVersion,
   getBuildJob,
   getBuildJobLogs,
@@ -24,6 +26,7 @@ import {
   getJobOutput,
   invokeFunction,
   listDeployments,
+  listHTTPTriggers,
   listProjects,
   listRegions,
   sleep,
@@ -137,6 +140,9 @@ export default function App() {
   const [backendProjects, setBackendProjects] = useState<ProjectRecord[]>([]);
   const [backendDeployments, setBackendDeployments] = useState<DeploymentSummary[]>([]);
   const [deploymentLogCache, setDeploymentLogCache] = useState<Record<string, string>>({});
+  const [functionURLCache, setFunctionURLCache] = useState<Record<string, HTTPTrigger[]>>({});
+  const [functionURLBusyVersionID, setFunctionURLBusyVersionID] = useState<string | null>(null);
+  const [functionURLError, setFunctionURLError] = useState<string | null>(null);
   const [detailLogText, setDetailLogText] = useState<string | null>(null);
   const [integrationError, setIntegrationError] = useState<string | null>(null);
 
@@ -456,6 +462,60 @@ export default function App() {
   const activeDetailDeploymentID = detailDeployments[0]?.id;
 
   useEffect(() => {
+    if (!activeDetailDeploymentID) {
+      setFunctionURLError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setFunctionURLError(null);
+
+    void listHTTPTriggers(connection, activeDetailDeploymentID)
+      .then((triggers) => {
+        if (cancelled) {
+          return;
+        }
+        setFunctionURLCache((prev) => ({
+          ...prev,
+          [activeDetailDeploymentID]: triggers,
+        }));
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return;
+        }
+        setFunctionURLError(err instanceof Error ? err.message : 'Unable to load Function URLs.');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeDetailDeploymentID, connection]);
+
+  const handleCreateFunctionURL = useCallback(async (versionID: string) => {
+    setFunctionURLBusyVersionID(versionID);
+    setFunctionURLError(null);
+    try {
+      const trigger = await createHTTPTrigger(connection, versionID, {
+        description: 'Frontend-generated function URL',
+        authMode: 'none',
+      });
+      setFunctionURLCache((prev) => {
+        const existing = prev[versionID] ?? [];
+        const deduped = existing.filter((item) => item.token !== trigger.token);
+        return {
+          ...prev,
+          [versionID]: [trigger, ...deduped],
+        };
+      });
+    } catch (err) {
+      setFunctionURLError(err instanceof Error ? err.message : 'Unable to create Function URL.');
+    } finally {
+      setFunctionURLBusyVersionID((current) => (current === versionID ? null : current));
+    }
+  }, [connection]);
+
+  useEffect(() => {
     if (activeTab !== 'logs' || !activeDetailDeploymentID) {
       setDetailLogText(null);
       return;
@@ -671,6 +731,10 @@ export default function App() {
                 setActiveTab={setActiveTab}
                 deployments={detailDeployments}
                 logs={detailLogs}
+                functionURLs={activeDetailDeploymentID ? functionURLCache[activeDetailDeploymentID] ?? [] : []}
+                functionURLBusy={functionURLBusyVersionID === activeDetailDeploymentID}
+                functionURLError={functionURLError}
+                onCreateFunctionURL={activeDetailDeploymentID ? () => void handleCreateFunctionURL(activeDetailDeploymentID) : undefined}
               />
             )}
             {screen === 'settings' && (
