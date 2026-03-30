@@ -91,7 +91,6 @@ export async function listGitHubInstallations(): Promise<GitHubInstallation[]> {
 export async function listGitHubRepositories(installationId: number, query = ''): Promise<GitHubRepository[]> {
   const params = new URLSearchParams({
     installationId: String(installationId),
-    perPage: '100',
   });
   if (query.trim()) {
     params.set('q', query.trim());

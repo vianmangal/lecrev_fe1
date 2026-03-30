@@ -153,6 +153,34 @@ async function withKnownInstallationToken<T>(installationID: number, fn: (token:
   return fn(installationToken);
 }
 
+async function listInstallationRepositories(installationID: number): Promise<GitHubInstallationRepositoriesResponse> {
+  return withKnownInstallationToken(installationID, async (token) => {
+    const repositories: GitHubRepoPayload[] = [];
+    const perPage = 100;
+    let totalCount = 0;
+
+    for (let page = 1; page <= 100; page += 1) {
+      const payload = await githubRequest<GitHubInstallationRepositoriesResponse>(
+        `/installation/repositories?per_page=${perPage}&page=${page}`,
+        {},
+        token,
+      );
+      const nextPage = payload.repositories ?? [];
+      totalCount = payload.total_count ?? totalCount;
+      repositories.push(...nextPage);
+
+      if (nextPage.length < perPage) {
+        break;
+      }
+    }
+
+    return {
+      total_count: totalCount || repositories.length,
+      repositories,
+    };
+  });
+}
+
 function sendGitHubError(res: express.Response, error: unknown) {
   const message = error instanceof Error ? error.message : 'GitHub request failed.';
   const lower = message.toLowerCase();
@@ -337,11 +365,34 @@ export function createGitHubAppRouter() {
       return;
     }
 
-    const page = parsePositiveInt(req.query.page, 1, 1000);
+    const pageParam = `${req.query.page ?? ''}`.trim();
+    const page = parsePositiveInt(pageParam, 1, 1000);
     const perPage = parsePositiveInt(req.query.perPage, 100, 100);
     const query = `${req.query.q ?? ''}`.trim().toLowerCase();
 
     try {
+      if (!pageParam) {
+        const payload = await listInstallationRepositories(installationID);
+        const repositories = (payload.repositories ?? [])
+          .map((repo) => normalizeRepository(repo, installationID))
+          .filter((repo) => {
+            if (!query) {
+              return true;
+            }
+            return repo.fullName.toLowerCase().includes(query);
+          });
+
+        res.json({
+          installationId: installationID,
+          page: 1,
+          perPage: repositories.length,
+          totalCount: payload.total_count ?? repositories.length,
+          hasNextPage: false,
+          repositories,
+        });
+        return;
+      }
+
       const payload = await withKnownInstallationToken(installationID, async (token) => (
         githubRequest<GitHubInstallationRepositoriesResponse>(
           `/installation/repositories?per_page=${perPage}&page=${page}`,

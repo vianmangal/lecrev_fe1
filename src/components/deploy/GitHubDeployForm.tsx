@@ -49,6 +49,7 @@ export function GitHubDeployForm({
   const [selectedInstallationID, setSelectedInstallationID] = useState<number | null>(null);
   const [repositories, setRepositories] = useState<GitHubRepository[]>([]);
   const [selectedRepoFullName, setSelectedRepoFullName] = useState('');
+  const [repoUrl, setRepoUrl] = useState('');
   const [repoFilter, setRepoFilter] = useState('');
   const [branch, setBranch] = useState('');
   const [entrypoint, setEntrypoint] = useState('');
@@ -149,6 +150,31 @@ export function GitHubDeployForm({
     [repositories, selectedRepoFullName],
   );
 
+  const inspectRepositorySelection = async (owner: string, repo: string) => {
+    setLoadingInspection(true);
+    setLocalError(null);
+    try {
+      const inspection = await inspectGitHubRepository(owner, repo);
+      setSelectedInstallationID((current) => inspection.repository.installationId ?? current);
+      setRepositories((current) => {
+        if (current.some((item) => item.fullName === inspection.repository.fullName)) {
+          return current;
+        }
+        return [inspection.repository, ...current];
+      });
+      setSelectedRepoFullName(inspection.repository.fullName);
+      setBranch(inspection.ref || inspection.repository.defaultBranch);
+      setEntrypoint(inspection.suggestedEntrypoint);
+      setEntrypointCandidates(inspection.entrypointCandidates);
+      setFunctionName(inspection.suggestedFunctionName);
+      setRepoUrl(inspection.repository.htmlUrl ?? `https://github.com/${inspection.repository.fullName}`);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : 'Unable to inspect repository.');
+    } finally {
+      setLoadingInspection(false);
+    }
+  };
+
   useEffect(() => {
     if (!selectedRepo) {
       setBranch('');
@@ -159,9 +185,9 @@ export function GitHubDeployForm({
     }
 
     let cancelled = false;
+    setRepoUrl(selectedRepo.htmlUrl ?? `https://github.com/${selectedRepo.fullName}`);
     setLoadingInspection(true);
     setLocalError(null);
-
     void inspectGitHubRepository(selectedRepo.owner, selectedRepo.repo)
       .then((inspection) => {
         if (cancelled) {
@@ -192,6 +218,42 @@ export function GitHubDeployForm({
     };
   }, [selectedRepo]);
 
+  const parseGitHubRepositoryInput = (value: string): { owner: string; repo: string } | null => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const sshMatch = trimmed.match(/^git@github\.com:([^/]+)\/([^/]+?)(?:\.git)?$/i);
+    if (sshMatch) {
+      return { owner: sshMatch[1], repo: sshMatch[2] };
+    }
+
+    try {
+      const url = new URL(trimmed);
+      if (url.hostname !== 'github.com') {
+        return null;
+      }
+      const segments = url.pathname.replace(/^\/+|\/+$/g, '').split('/');
+      if (segments.length < 2) {
+        return null;
+      }
+      return {
+        owner: segments[0],
+        repo: segments[1].replace(/\.git$/i, ''),
+      };
+    } catch {
+      const parts = trimmed.replace(/^\/+|\/+$/g, '').split('/');
+      if (parts.length === 2) {
+        return {
+          owner: parts[0],
+          repo: parts[1].replace(/\.git$/i, ''),
+        };
+      }
+      return null;
+    }
+  };
+
   const handleDeploy = async () => {
     if (!selectedRepo || !selectedInstallationID) {
       setLocalError('Select an installed repository before deploying.');
@@ -221,6 +283,15 @@ export function GitHubDeployForm({
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : 'GitHub deploy failed.');
     }
+  };
+
+  const handleUseRepositoryURL = async () => {
+    const parsed = parseGitHubRepositoryInput(repoUrl);
+    if (!parsed) {
+      setLocalError('Enter a valid GitHub repository URL or owner/repo pair.');
+      return;
+    }
+    await inspectRepositorySelection(parsed.owner, parsed.repo);
   };
 
   const combinedError = localError || error;
@@ -303,6 +374,29 @@ export function GitHubDeployForm({
         </p>
       </div>
 
+      <div className="mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
+          <TextInput
+            label="GitHub Repository URL"
+            value={repoUrl}
+            onChange={setRepoUrl}
+            placeholder="https://github.com/owner/repo"
+          />
+          <GhostBtn
+            onClick={() => {
+              void handleUseRepositoryURL();
+            }}
+            disabled={loadingInspection || !repoUrl.trim()}
+            className="h-[41px]"
+          >
+            {loadingInspection ? 'Inspecting…' : 'Use URL'}
+          </GhostBtn>
+        </div>
+        <p className="text-[10px] text-muted mt-2">
+          Paste a GitHub URL if the repository is not convenient to pick from the installation list.
+        </p>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
         <TextInput
           label="Function Name"
@@ -355,7 +449,7 @@ export function GitHubDeployForm({
       <div className="flex gap-3">
         <CyanBtn
           onClick={() => void handleDeploy()}
-          disabled={isSubmitting || !appConfigured || !selectedRepo || !entrypoint.trim() || !functionName.trim()}
+          disabled={isSubmitting || loadingInspection || !appConfigured || !selectedRepo || !entrypoint.trim() || !functionName.trim()}
         >
           {isSubmitting ? 'Deploying...' : 'Deploy From GitHub →'}
         </CyanBtn>
