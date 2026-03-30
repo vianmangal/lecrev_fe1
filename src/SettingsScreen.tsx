@@ -1,14 +1,37 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TextInput, SelectInput, CyanBtn, GhostBtn } from './components/UI';
+import { ApiConnection } from './api';
 
 interface SettingsScreenProps {
   settingsTab: string;
   setSettingsTab: (t: string) => void;
+  connection: ApiConnection;
+  onSaveConnection: (connection: ApiConnection) => void;
+  availableRegions: string[];
 }
 
-export const SettingsScreen: React.FC<SettingsScreenProps> = ({ settingsTab, setSettingsTab }) => {
+export const SettingsScreen: React.FC<SettingsScreenProps> = ({ settingsTab, setSettingsTab, connection, onSaveConnection, availableRegions }) => {
   const TABS = ["General", "Team", "Domains", "API Keys", "Danger Zone"];
+  const [baseUrl, setBaseUrl] = React.useState(connection.baseUrl);
+  const [apiKey, setApiKey] = React.useState(connection.apiKey);
+  const [projectId, setProjectId] = React.useState(connection.projectId);
+  const [savedAt, setSavedAt] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    setBaseUrl(connection.baseUrl);
+    setApiKey(connection.apiKey);
+    setProjectId(connection.projectId);
+  }, [connection.baseUrl, connection.apiKey, connection.projectId]);
+
+  const saveConnection = () => {
+    onSaveConnection({
+      baseUrl: baseUrl.trim(),
+      apiKey: apiKey.trim(),
+      projectId: projectId.trim() || 'demo',
+    });
+    setSavedAt(new Date().toLocaleTimeString('en-GB', { hour12: false }));
+  };
 
   return (
     <motion.div
@@ -55,6 +78,45 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ settingsTab, set
               <TextInput label="Organisation Name" defaultValue="Lecrev" />
               <TextInput label="Default Region" defaultValue="LHR" />
               <SelectInput label="Build Runtime" options={["Node 20 (LTS)", "Node 22", "Bun 1.1", "Deno 2.0"]} />
+
+              <div className="border border-border p-5 mt-4">
+                <p className="text-[10px] uppercase tracking-[0.15em] text-sub mb-4">Control Plane Connection</p>
+                <div className="flex flex-col gap-4">
+                  <TextInput
+                    label="API Base URL"
+                    value={baseUrl}
+                    onChange={setBaseUrl}
+                    placeholder="Leave blank to use /v1 dev proxy"
+                  />
+                  <TextInput
+                    label="X-API-Key"
+                    value={apiKey}
+                    onChange={setApiKey}
+                    placeholder="dev-root-key"
+                  />
+                  <TextInput
+                    label="Default Project ID"
+                    value={projectId}
+                    onChange={setProjectId}
+                    placeholder="demo"
+                  />
+                </div>
+                <div className="mt-4">
+                  <p className="text-[9px] uppercase tracking-[0.12em] text-muted mb-2">Supported Regions</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(availableRegions.length ? availableRegions : ['ap-south-1', 'ap-south-2', 'ap-southeast-1']).map((region) => (
+                      <span key={region} className="text-[9px] uppercase tracking-[0.12em] border border-border px-2 py-1 text-sub">
+                        {region}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mt-5">
+                  <span className="text-[9px] uppercase tracking-[0.12em] text-muted">{savedAt ? `Saved ${savedAt}` : 'Local browser storage'}</span>
+                  <CyanBtn onClick={saveConnection}>Save Connection</CyanBtn>
+                </div>
+              </div>
+
               <div className="flex justify-end">
                 <CyanBtn>Save Changes</CyanBtn>
               </div>

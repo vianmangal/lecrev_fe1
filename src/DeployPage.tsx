@@ -1,20 +1,46 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GhostBtn, CyanBtn, SelectInput, TextInput } from './components/UI';
 import { Upload, Code, Terminal, CheckCircle2 } from 'lucide-react';
+import { DeployRequestInput } from './api';
 
 interface DeployPageProps {
   onBack: () => void;
+  onDeploy: (request: DeployRequestInput) => Promise<{ versionId: string; buildJobId?: string }>;
+  defaultProjectId: string;
+  regionOptions: string[];
 }
 
-export const DeployPage: React.FC<DeployPageProps> = ({ onBack }) => {
+const DEFAULT_HANDLER = "export async function handler(event, context) {\n  return { ok: true, echo: event, region: context.region, hostId: context.hostId };\n}\n";
+
+export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaultProjectId, regionOptions }) => {
   const [mode, setMode] = useState<"file" | "code" | "function" | null>(null);
   const [dragging, setDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [codeVal, setCodeVal] = useState("// Paste or write your code here\n\nexport default function handler(req, res) {\n  res.json({ status: 'ok' });\n}\n");
+  const [codeVal, setCodeVal] = useState(DEFAULT_HANDLER);
+  const [functionVal, setFunctionVal] = useState(DEFAULT_HANDLER);
+  const [projectId, setProjectId] = useState(defaultProjectId || 'demo');
+  const [environment, setEnvironment] = useState<'Production' | 'Staging' | 'Preview'>('Production');
+  const [region, setRegion] = useState(regionOptions[0] || 'ap-south-1');
+  const [functionName, setFunctionName] = useState('ui-function');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [deployInfo, setDeployInfo] = useState<{ versionId: string; buildJobId?: string } | null>(null);
   const [deployed, setDeployed] = useState(false);
 
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setProjectId(defaultProjectId || 'demo');
+  }, [defaultProjectId]);
+
+  useEffect(() => {
+    if (regionOptions.length === 0) {
+      setRegion('ap-south-1');
+      return;
+    }
+    setRegion((current) => (regionOptions.includes(current) ? current : regionOptions[0]));
+  }, [regionOptions]);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -22,6 +48,83 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack }) => {
     const f = e.dataTransfer.files[0];
     if (f) setFile(f);
   };
+
+  const sanitizeName = (value: string): string => {
+    const normalized = value
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-_]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    return normalized || 'ui-function';
+  };
+
+  const buildRequest = async (): Promise<DeployRequestInput> => {
+    if (!mode) {
+      throw new Error('Select a deployment mode first.');
+    }
+    const selectedRegion = region.trim() || regionOptions[0] || 'ap-south-1';
+    const cleanedProject = projectId.trim() || defaultProjectId.trim() || 'demo';
+    const cleanedName = sanitizeName(functionName);
+
+    if (mode === 'file') {
+      if (!file) {
+        throw new Error('Select a file before deploying.');
+      }
+      const content = await file.text();
+      const entrypoint = file.name || 'index.mjs';
+      return {
+        projectId: cleanedProject,
+        name: cleanedName,
+        environment,
+        region: selectedRegion,
+        entrypoint,
+        inlineFiles: {
+          [entrypoint]: content,
+        },
+      };
+    }
+
+    if (mode === 'code') {
+      return {
+        projectId: cleanedProject,
+        name: cleanedName,
+        environment,
+        region: selectedRegion,
+        entrypoint: 'index.mjs',
+        inlineFiles: {
+          'index.mjs': codeVal,
+        },
+      };
+    }
+
+    return {
+      projectId: cleanedProject,
+      name: cleanedName,
+      environment,
+      region: selectedRegion,
+      entrypoint: 'handler.mjs',
+      inlineFiles: {
+        'handler.mjs': functionVal,
+      },
+    };
+  };
+
+  const handleDeploy = async () => {
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const request = await buildRequest();
+      const info = await onDeploy(request);
+      setDeployInfo(info);
+      setDeployed(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Deployment failed.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const canSubmit = mode !== null && !(mode === 'file' && !file) && !isSubmitting;
 
   if (deployed) return (
     <motion.div
@@ -33,9 +136,9 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack }) => {
         <CheckCircle2 size={32} />
       </div>
       <p className="text-sm uppercase tracking-[0.1em]">Deployment Queued</p>
-      <p className="text-[11px] text-sub">lecrev.sh/deploy-{Math.random().toString(36).slice(2, 8)}</p>
+      <p className="text-[11px] text-sub">{deployInfo?.buildJobId || deployInfo?.versionId || 'deployment'}</p>
       <div className="flex gap-3 mt-2">
-        <GhostBtn onClick={() => { setDeployed(false); setMode(null); setFile(null); }}>New Deployment</GhostBtn>
+        <GhostBtn onClick={() => { setDeployed(false); setMode(null); setFile(null); setDeployInfo(null); setError(null); }}>New Deployment</GhostBtn>
         <CyanBtn onClick={onBack}>View Deployments →</CyanBtn>
       </div>
     </motion.div>
@@ -76,6 +179,13 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack }) => {
           New Deployment
         </h2>
         <p className="text-[12px] text-sub">Choose how you want to deploy your project.</p>
+        <p className="text-[10px] text-muted mt-2 uppercase tracking-[0.12em]">V1 runtime is node22 with APAC regions.</p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-5 mb-10 max-w-[780px]">
+        <TextInput label="Project ID" value={projectId} onChange={setProjectId} placeholder="demo" />
+        <TextInput label="Function Name" value={functionName} onChange={setFunctionName} placeholder="ui-function" />
+        <SelectInput label="Environment" options={["Production", "Staging", "Preview"]} value={environment} onChange={(value) => setEnvironment(value as 'Production' | 'Staging' | 'Preview')} />
       </div>
 
       <AnimatePresence mode="wait">
@@ -144,8 +254,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack }) => {
                   )}
                 </div>
                 <div className="flex flex-col gap-5 mb-8">
-                  <SelectInput label="Target Project" options={["Core Platform", "API Gateway", "Design System", "Analytics"]} />
-                  <SelectInput label="Environment" options={["Production", "Staging", "Preview"]} />
+                  <SelectInput label="Region" options={regionOptions.length ? regionOptions : ['ap-south-1']} value={region} onChange={setRegion} />
                 </div>
               </>
             )}
@@ -153,12 +262,12 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack }) => {
             {mode === "code" && (
               <div className="max-w-[800px]">
                 <div className="grid grid-cols-2 gap-5 mb-5">
-                  <SelectInput label="Language" options={["JavaScript", "TypeScript", "Python", "Go", "Rust"]} />
-                  <SelectInput label="Environment" options={["Production", "Staging", "Preview"]} />
+                  <SelectInput label="Runtime" options={["node22"]} />
+                  <SelectInput label="Region" options={regionOptions.length ? regionOptions : ['ap-south-1']} value={region} onChange={setRegion} />
                 </div>
                 <div className="border border-border mb-8">
                   <div className="bg-surface border-b border-border px-4 py-2 flex items-center justify-between">
-                    <span className="text-[10px] text-sub">index.js</span>
+                    <span className="text-[10px] text-sub">index.mjs</span>
                     <div className="flex gap-1.5">
                       {["#ff5f56", "#ffbd2e", "#27c93f"].map(c => (
                         <div key={c} className="w-2.5 h-2.5 rounded-full opacity-70" style={{ backgroundColor: c }} />
@@ -177,19 +286,19 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack }) => {
 
             {mode === "function" && (
               <div className="flex flex-col gap-5 mb-8">
-                <TextInput label="Function Name" placeholder="my-function" />
                 <div className="grid grid-cols-2 gap-5">
-                  <SelectInput label="Runtime" options={["Node 20 (LTS)", "Node 22", "Python 3.12", "Go 1.22", "Rust 1.78"]} />
-                  <SelectInput label="Trigger Type" options={["HTTP", "Cron Schedule", "Queue Event", "Webhook", "Storage Event"]} />
+                  <SelectInput label="Runtime" options={["node22"]} />
+                  <SelectInput label="Trigger Type" options={["HTTP"]} />
                 </div>
-                <SelectInput label="Region" options={["LHR (London)", "IAD (Virginia)", "SIN (Singapore)", "FRA (Frankfurt)", "NRT (Tokyo)"]} />
+                <SelectInput label="Region" options={regionOptions.length ? regionOptions : ['ap-south-1']} value={region} onChange={setRegion} />
                 <div className="border border-border mt-4">
                   <div className="bg-surface border-b border-border px-4 py-2 flex items-center justify-between">
-                    <span className="text-[10px] text-sub">handler.js</span>
+                    <span className="text-[10px] text-sub">handler.mjs</span>
                     <span className="text-[9px] text-muted uppercase tracking-[0.1em]">Starter Template</span>
                   </div>
                   <textarea
-                    defaultValue={"export default async function handler(req, res) {\n  // Your function logic here\n  return res.json({ message: 'Hello from Lecrev!' });\n}\n"}
+                    value={functionVal}
+                    onChange={(e) => setFunctionVal(e.target.value)}
                     spellCheck={false}
                     className="w-full min-h-[160px] p-5 bg-black text-xs text-neutral-200 leading-relaxed border-none resize-y outline-none"
                   />
@@ -197,10 +306,16 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack }) => {
               </div>
             )}
 
+            {error && (
+              <div className="mb-5 border border-red-500/30 bg-red-500/5 px-4 py-3 text-[11px] text-red-400">
+                {error}
+              </div>
+            )}
+
             <div className="flex gap-3">
-              <GhostBtn onClick={() => setMode(null)}>Cancel</GhostBtn>
-              <CyanBtn onClick={() => setDeployed(true)}>
-                {mode === 'file' && !file ? "Select a File First" : "Deploy →"}
+              <GhostBtn onClick={() => { setMode(null); setError(null); }} disabled={isSubmitting}>Cancel</GhostBtn>
+              <CyanBtn onClick={handleDeploy} disabled={!canSubmit}>
+                {isSubmitting ? 'Submitting...' : mode === 'file' && !file ? 'Select a File First' : 'Deploy ->'}
               </CyanBtn>
             </div>
           </motion.div>

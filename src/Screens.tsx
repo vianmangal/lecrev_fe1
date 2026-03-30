@@ -2,13 +2,15 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DEPLOYS, PROJECTS } from './constants';
 import { StatusBadge, GhostBtn } from './components/UI';
-import { Project } from './types';
+import { Deployment, Project } from './types';
 
 interface ProjectsScreenProps {
   onViewProject: (p: Project) => void;
+  projects?: Project[];
 }
 
-export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({ onViewProject }) => {
+export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({ onViewProject, projects }) => {
+  const projectRows = projects && projects.length > 0 ? projects : PROJECTS;
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -54,7 +56,7 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({ onViewProject })
           <span className="text-[10px] uppercase tracking-[0.15em] text-sub cursor-pointer hover:text-white">View All</span>
         </div>
         <div className="bg-border mt-0 space-y-[1px]">
-          {PROJECTS.map(p => (
+          {projectRows.map(p => (
             <div
               key={p.name}
               onClick={() => onViewProject(p)}
@@ -103,11 +105,16 @@ const FilterBtn: React.FC<FilterBtnProps> = ({ val, cur, set }) => {
   );
 };
 
-export const DeploymentsScreen: React.FC = () => {
+interface DeploymentsScreenProps {
+  deployments?: Deployment[];
+}
+
+export const DeploymentsScreen: React.FC<DeploymentsScreenProps> = ({ deployments }) => {
   const [envF, setEnvF] = React.useState("All");
   const [statusF, setStatusF] = React.useState("All");
+  const deploymentRows = deployments && deployments.length > 0 ? deployments : DEPLOYS;
 
-  const filtered = DEPLOYS.filter(d =>
+  const filtered = deploymentRows.filter(d =>
     (envF === "All" || d.env === envF) &&
     (statusF === "All" || d.status === statusF)
   );
@@ -122,7 +129,7 @@ export const DeploymentsScreen: React.FC = () => {
     >
       <div className="flex items-center justify-between mb-8">
         <h2 className="text-xl uppercase tracking-tight text-sub font-normal">Deployments</h2>
-        <span className="text-[10px] uppercase tracking-[0.15em] text-sub">{filtered.length} / {DEPLOYS.length} shown</span>
+        <span className="text-[10px] uppercase tracking-[0.15em] text-sub">{filtered.length} / {deploymentRows.length} shown</span>
       </div>
 
       <div className="flex gap-2 mb-8 pb-6 border-b border-border flex-wrap">
@@ -130,7 +137,7 @@ export const DeploymentsScreen: React.FC = () => {
         <FilterBtn val="Production" cur={envF} set={setEnvF} />
         <FilterBtn val="Staging" cur={envF} set={setEnvF} />
         <div className="ml-auto flex gap-2">
-          {["Active", "Building", "Failed"].map(s =>
+          {["Active", "Building", "Ready", "Failed"].map(s =>
             <FilterBtn key={s} val={s} cur={statusF} set={setStatusF} />
           )}
         </div>

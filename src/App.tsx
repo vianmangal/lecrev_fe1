@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { LayoutGrid, List, Settings, ChevronDown, Globe, Zap, Cpu } from 'lucide-react';
 import { ProjectsScreen, DeploymentsScreen } from './Screens';
@@ -7,7 +7,79 @@ import { SettingsScreen } from './SettingsScreen';
 import { DeployPage } from './DeployPage';
 import { AuthScreen } from './AuthScreen';
 import { CyanBtn } from './components/UI';
-import { Project } from './types';
+import { Deployment, LogEntry, Project } from './types';
+import { DEPLOYS, PROJECTS } from './constants';
+import {
+  ApiConnection,
+  DeployRequestInput,
+  LiveDeploymentRecord,
+  createFunctionVersion,
+  getBuildJob,
+  getBuildJobLogs,
+  getFunctionVersion,
+  getJob,
+  getJobLogs,
+  getJobOutput,
+  invokeFunction,
+  listRegions,
+  sleep,
+  toDeploymentRow,
+} from './api';
+
+const CONNECTION_STORAGE_KEY = 'lecrev.ui.connection';
+const FALLBACK_REGIONS = ['ap-south-1', 'ap-south-2', 'ap-southeast-1'];
+const DEFAULT_CONNECTION: ApiConnection = {
+  baseUrl: '',
+  apiKey: 'dev-root-key',
+  projectId: 'demo',
+};
+
+function loadConnection(): ApiConnection {
+  try {
+    const raw = window.localStorage.getItem(CONNECTION_STORAGE_KEY);
+    if (!raw) {
+      return DEFAULT_CONNECTION;
+    }
+    const parsed = JSON.parse(raw) as Partial<ApiConnection>;
+    return {
+      baseUrl: parsed.baseUrl ?? DEFAULT_CONNECTION.baseUrl,
+      apiKey: parsed.apiKey ?? DEFAULT_CONNECTION.apiKey,
+      projectId: parsed.projectId ?? DEFAULT_CONNECTION.projectId,
+    };
+  } catch {
+    return DEFAULT_CONNECTION;
+  }
+}
+
+function classifyLogLevel(line: string): LogEntry['level'] {
+  const lower = line.toLowerCase();
+  if (lower.includes('error') || lower.includes('failed')) {
+    return 'ERROR';
+  }
+  if (lower.includes('warn')) {
+    return 'WARN';
+  }
+  return 'INFO';
+}
+
+function toLogEntries(raw: string): LogEntry[] {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .slice(0, 200);
+
+  if (lines.length === 0) {
+    return [];
+  }
+
+  const now = Date.now();
+  return lines.map((line, index) => ({
+    t: new Date(now - (lines.length - index) * 1000).toLocaleTimeString('en-GB', { hour12: false }),
+    level: classifyLogLevel(line),
+    msg: line,
+  }));
+}
 
 export default function App() {
   const [screen, setScreen] = useState<"projects" | "deployments" | "settings" | "detail" | "deploy">("projects");
@@ -17,6 +89,236 @@ export default function App() {
   const [acctOpen, setAcctOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'signin' | 'register' | null>(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [connection, setConnection] = useState<ApiConnection>(() => loadConnection());
+  const [availableRegions, setAvailableRegions] = useState<string[]>(FALLBACK_REGIONS);
+  const [liveDeployments, setLiveDeployments] = useState<LiveDeploymentRecord[]>([]);
+  const [integrationError, setIntegrationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    window.localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(connection));
+  }, [connection]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshRegions = async () => {
+      try {
+        const rows = await listRegions(connection);
+        if (cancelled) {
+          return;
+        }
+        if (rows.length > 0) {
+          setAvailableRegions(rows.map((row) => row.name));
+        } else {
+          setAvailableRegions(FALLBACK_REGIONS);
+        }
+        setIntegrationError(null);
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+        setAvailableRegions(FALLBACK_REGIONS);
+        setIntegrationError(err instanceof Error ? err.message : 'Unable to load region catalog.');
+      }
+    };
+
+    void refreshRegions();
+    return () => {
+      cancelled = true;
+    };
+  }, [connection.baseUrl, connection.apiKey]);
+
+  const patchLiveDeployment = useCallback((versionId: string, updater: (record: LiveDeploymentRecord) => LiveDeploymentRecord) => {
+    setLiveDeployments((prev) =>
+      prev.map((record) => (record.version.id === versionId ? updater(record) : record)),
+    );
+  }, []);
+
+  const trackExecutionLifecycle = useCallback(async (conn: ApiConnection, versionId: string, jobId: string) => {
+    try {
+      while (true) {
+        const job = await getJob(conn, jobId);
+        patchLiveDeployment(versionId, (record) => ({
+          ...record,
+          job,
+          error: job.state === 'failed' ? job.error || record.error : record.error,
+        }));
+
+        if (job.state === 'succeeded' || job.state === 'failed') {
+          const [jobLogs, jobOutput] = await Promise.all([
+            getJobLogs(conn, jobId).catch(() => undefined),
+            getJobOutput(conn, jobId).catch(() => undefined),
+          ]);
+          patchLiveDeployment(versionId, (record) => ({
+            ...record,
+            job,
+            jobLogs: jobLogs ?? record.jobLogs,
+            jobOutput: jobOutput ?? record.jobOutput,
+          }));
+          break;
+        }
+        await sleep(1200);
+      }
+    } catch (err) {
+      patchLiveDeployment(versionId, (record) => ({
+        ...record,
+        error: err instanceof Error ? err.message : 'Execution polling failed.',
+      }));
+    }
+  }, [patchLiveDeployment]);
+
+  const trackBuildLifecycle = useCallback(async (conn: ApiConnection, versionId: string, buildJobId: string) => {
+    let lastBuildState: LiveDeploymentRecord['buildJob'];
+    let lastVersionState: LiveDeploymentRecord['version'] | undefined;
+    try {
+      while (true) {
+        const [buildJob, version] = await Promise.all([
+          getBuildJob(conn, buildJobId),
+          getFunctionVersion(conn, versionId),
+        ]);
+        lastBuildState = buildJob;
+        lastVersionState = version;
+        patchLiveDeployment(versionId, (record) => ({
+          ...record,
+          version,
+          buildJob,
+          error: buildJob.state === 'failed' || version.state === 'failed' ? buildJob.error || record.error : record.error,
+        }));
+
+        if (buildJob.state === 'failed' || version.state === 'failed') {
+          break;
+        }
+        if (buildJob.state === 'succeeded' && version.state === 'ready') {
+          break;
+        }
+        await sleep(1200);
+      }
+
+      const buildLogs = await getBuildJobLogs(conn, buildJobId).catch(() => undefined);
+      if (buildLogs) {
+        patchLiveDeployment(versionId, (record) => ({
+          ...record,
+          buildLogs,
+        }));
+      }
+
+      if (!lastBuildState || !lastVersionState) {
+        return;
+      }
+      if (lastBuildState.state !== 'succeeded' || lastVersionState.state !== 'ready') {
+        return;
+      }
+
+      const job = await invokeFunction(conn, versionId, {
+        source: 'lecrev_frontend',
+        mode: 'wireframe',
+        submittedAt: new Date().toISOString(),
+      });
+      patchLiveDeployment(versionId, (record) => ({
+        ...record,
+        job,
+      }));
+      await trackExecutionLifecycle(conn, versionId, job.id);
+    } catch (err) {
+      patchLiveDeployment(versionId, (record) => ({
+        ...record,
+        error: err instanceof Error ? err.message : 'Build polling failed.',
+      }));
+    }
+  }, [patchLiveDeployment, trackExecutionLifecycle]);
+
+  const handleDeploy = useCallback(async (request: DeployRequestInput) => {
+    try {
+      setIntegrationError(null);
+      const conn = { ...connection };
+      const version = await createFunctionVersion(conn, request);
+
+      setLiveDeployments((prev) => [
+        {
+          projectId: request.projectId,
+          environment: request.environment,
+          version,
+        },
+        ...prev.filter((record) => record.version.id !== version.id),
+      ]);
+
+      if (version.buildJobId) {
+        void trackBuildLifecycle(conn, version.id, version.buildJobId);
+      }
+
+      return {
+        versionId: version.id,
+        buildJobId: version.buildJobId,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Deployment failed.';
+      setIntegrationError(message);
+      throw err;
+    }
+  }, [connection, trackBuildLifecycle]);
+
+  const deploymentRows = useMemo<Deployment[]>(() => {
+    const map = new Map<string, Deployment>();
+    for (const row of liveDeployments.map(toDeploymentRow)) {
+      map.set(row.id, row);
+    }
+    for (const row of DEPLOYS) {
+      if (!map.has(row.id)) {
+        map.set(row.id, row);
+      }
+    }
+    return Array.from(map.values());
+  }, [liveDeployments]);
+
+  const projectRows = useMemo<Project[]>(() => {
+    const map = new Map<string, Project>();
+    for (const project of PROJECTS) {
+      map.set(project.name, project);
+    }
+    for (const row of liveDeployments.map(toDeploymentRow)) {
+      const slug = row.project
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      const active = row.status === 'Active' || row.status === 'Ready';
+      map.set(row.project, {
+        name: row.project,
+        url: `${slug || 'project'}.lecrev.app`,
+        status: row.env,
+        instances: active ? '1 Instance' : row.status,
+        active,
+      });
+    }
+    return Array.from(map.values());
+  }, [liveDeployments]);
+
+  const detailDeployments = useMemo<Deployment[]>(() => {
+    if (!activeProj) {
+      return deploymentRows.slice(0, 4);
+    }
+    const rows = deploymentRows.filter((row) => row.project === activeProj.name);
+    return rows.length > 0 ? rows : deploymentRows.slice(0, 4);
+  }, [activeProj, deploymentRows]);
+
+  const detailLogs = useMemo<LogEntry[] | undefined>(() => {
+    if (!activeProj) {
+      return undefined;
+    }
+    const record = liveDeployments.find((entry) => entry.projectId === activeProj.name);
+    if (!record) {
+      return undefined;
+    }
+    const raw = record.jobLogs || record.buildLogs || record.error;
+    if (!raw) {
+      return undefined;
+    }
+    const parsed = toLogEntries(raw);
+    return parsed.length > 0 ? parsed : undefined;
+  }, [activeProj, liveDeployments]);
+
+  const saveConnection = useCallback((next: ApiConnection) => {
+    setConnection(next);
+    setIntegrationError(null);
+  }, []);
 
   const go = (s: typeof screen) => {
     setScreen(s);
@@ -156,9 +458,10 @@ export default function App() {
               <ProjectsScreen
                 key="projects"
                 onViewProject={p => { setActiveProj(p); go("detail"); }}
+                projects={projectRows}
               />
             )}
-            {screen === "deployments" && <DeploymentsScreen key="deployments" />}
+            {screen === "deployments" && <DeploymentsScreen key="deployments" deployments={deploymentRows} />}
             {screen === "detail" && (
               <DetailScreen
                 key="detail"
@@ -166,6 +469,8 @@ export default function App() {
                 onBack={() => go("projects")}
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
+                deployments={detailDeployments}
+                logs={detailLogs}
               />
             )}
             {screen === "settings" && (
@@ -173,12 +478,18 @@ export default function App() {
                 key="settings"
                 settingsTab={settingsTab}
                 setSettingsTab={setSettingsTab}
+                connection={connection}
+                onSaveConnection={saveConnection}
+                availableRegions={availableRegions}
               />
             )}
             {screen === "deploy" && (
               <DeployPage
                 key="deploy"
                 onBack={() => go("deployments")}
+                onDeploy={handleDeploy}
+                defaultProjectId={connection.projectId}
+                regionOptions={availableRegions}
               />
             )}
           </AnimatePresence>
@@ -188,13 +499,14 @@ export default function App() {
         <footer className="h-8 border-t border-border px-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-6 text-[9px] uppercase tracking-[0.15em] text-muted">
             <div className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-cyan-primary" />
+              <div className={`w-1.5 h-1.5 rounded-full ${integrationError ? 'bg-amber-500' : 'bg-cyan-primary'}`} />
               LECREV_SYSTEM_CORE
             </div>
-            <span className="flex items-center gap-1"><Globe size={10} /> LHR-01</span>
+            <span className="flex items-center gap-1"><Globe size={10} /> {availableRegions[0] || 'ap-south-1'}</span>
             <span className="flex items-center gap-1"><Zap size={10} /> 200ms</span>
           </div>
           <div className="flex gap-6 text-[9px] uppercase tracking-[0.15em] text-muted">
+            <span>{integrationError ? 'API: Degraded' : 'API: Connected'}</span>
             <span className="flex items-center gap-1"><Cpu size={10} /> 8%</span>
             <span>{new Date().toLocaleTimeString('en-GB', { hour12: false })}</span>
           </div>
