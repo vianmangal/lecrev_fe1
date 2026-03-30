@@ -1,20 +1,48 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Lecrev Frontend
 
-# Run and deploy your AI Studio app
+This dashboard is wired to the Lecrev control plane and the async function lifecycle described in `FUNCTION_LIFECYCLE.md`.
 
-This contains everything you need to run your app locally.
+## Quick Demo
 
-View your app in AI Studio: https://ai.studio/apps/6d1b45ce-7eb3-4cec-a112-954ac039e0da
+Run the backend first in the backend repo:
 
-## Run Locally
+```bash
+cd /Users/ishaan/eeeverc
+go run ./cmd/lecrev devstack
+```
 
-**Prerequisites:**  Node.js
+In a second terminal, run the frontend here:
 
+```bash
+cd /Users/ishaan/frontend-eeverc/lecrev_fe1
+npm ci
+cp .env.example .env.local
+npm run dev
+```
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Open `http://localhost:3000`. The Vite dev server proxies `/v1` to `http://localhost:8080` by default, so leave `VITE_LECREV_API_BASE_URL` blank for local development.
+
+## Local Environment
+
+Use these defaults in `.env.local` for the fastest local setup:
+
+```bash
+LECREV_API_TARGET="http://localhost:8080"
+VITE_LECREV_API_BASE_URL=""
+VITE_LECREV_API_KEY="dev-root-key"
+VITE_LECREV_PROJECT_ID="demo"
+```
+
+## What the Dashboard Does
+
+- Loads regions, projects, and deployment summaries from the backend APIs.
+- Creates a new function version through `POST /v1/projects/{project}/functions`.
+- Polls build and function status until the version is ready.
+- Auto-invokes the function through `POST /v1/functions/{versionId}/invoke`.
+- Fetches archived build logs, deployment logs, and job output once the run completes.
+
+## Current Demo Scope
+
+- Runtime: `node22`
+- Regions: `ap-south-1`, `ap-south-2`, `ap-southeast-1`
+- Auth UI is still mock-only; the real control-plane auth path is the `X-API-Key` connection form.
