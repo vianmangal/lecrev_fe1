@@ -28,6 +28,13 @@ interface GitHubFileEntry {
   type: 'blob' | 'tree';
 }
 
+// GitHub App Configuration
+const GITHUB_APP_SLUG = import.meta.env.VITE_GITHUB_APP_SLUG || 'your_github_app_slug_here'; // Replace with your actual App slug
+const GITHUB_APP_REDIRECT_URI = window.location.origin + '/auth/github/callback'; // Your callback URL
+
+// GitHub App Installation URL
+const GITHUB_INSTALL_URL = `https://github.com/apps/${GITHUB_APP_SLUG}/installations/new`;
+
 const textToBase64 = (text: string) => window.btoa(unescape(encodeURIComponent(text)));
 const base64ToText = (base64: string) => decodeURIComponent(escape(window.atob(base64)));
 
@@ -48,6 +55,58 @@ const parseGitHubRepo = (input: string): { owner: string; repo: string } | null 
   return { owner: parts[0], repo: parts[1] };
 };
 
+// GitHub App Installation Functions
+const initiateGitHubAuth = () => {
+  const state = Math.random().toString(36).substring(7);
+  sessionStorage.setItem('github_oauth_state', state);
+
+  const params = new URLSearchParams({
+    state: state,
+  });
+
+  window.location.href = `${GITHUB_INSTALL_URL}?${params.toString()}`;
+};
+
+const handleGitHubCallback = async (installationId: string, state: string) => {
+  const storedState = sessionStorage.getItem('github_oauth_state');
+  if (state !== storedState) {
+    throw new Error('Invalid OAuth state');
+  }
+
+  // Call backend to get installation access token
+  const response = await fetch('http://localhost:3001/api/github/token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      installationId: installationId,
+    }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to get access token');
+  }
+
+  return data.token;
+};
+
+const getGitHubUser = async (token: string) => {
+  const response = await fetch('https://api.github.com/user', {
+    headers: {
+      'Authorization': `token ${token}`,
+      'Accept': 'application/vnd.github.v3+json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to get user info');
+  }
+
+  return response.json();
+};
+
 export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaultProjectId, regionOptions }) => {
   const [mode, setMode] = useState<'file' | 'code' | 'function' | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -62,11 +121,30 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
   const [deployed, setDeployed] = useState(false);
 
   const [githubRepo, setGithubRepo] = useState('');
-  const [githubPAT, setGithubPAT] = useState('');
   const [githubError, setGithubError] = useState<string | null>(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
+  const [githubAccessToken, setGithubAccessToken] = useState<string>('');
+  const [isGitHubAuthorized, setIsGitHubAuthorized] = useState(false);
+  const [githubUser, setGithubUser] = useState<any>(null);
+  const [githubInstallationId, setGithubInstallationId] = useState<string>('');
+
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const getGitHubUser = async (token: string) => {
+    const response = await fetch('https://api.github.com/user', {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to get user info');
+    }
+
+    return response.json();
+  };
 
   useEffect(() => {
     if (regionOptions.length === 0) {
@@ -75,6 +153,35 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
     }
     setRegion((current) => (regionOptions.includes(current) ? current : regionOptions[0]));
   }, [regionOptions]);
+
+  // Handle GitHub App installation callback
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const installationId = urlParams.get('installation_id');
+    const state = urlParams.get('state');
+    const error = urlParams.get('error');
+
+    if (error) {
+      setGithubError(`GitHub auth failed: ${error}`);
+      return;
+    }
+
+    if (installationId && state) {
+      handleGitHubCallback(installationId, state)
+        .then(async (token) => {
+          setGithubAccessToken(token);
+          setGithubInstallationId(installationId);
+          setIsGitHubAuthorized(true);
+          // For GitHub Apps, we don't get user info the same way, but we can set a placeholder
+          setGithubUser({ login: 'GitHub App Authorized' });
+          // Clean up URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+        })
+        .catch((err) => {
+          setGithubError(err.message);
+        });
+    }
+  }, []);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -93,18 +200,11 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
         throw new Error('Invalid repo format. Use owner/repo or GitHub URL.');
       }
 
-      if (!githubPAT.trim()) {
-        throw new Error('GitHub token is required.');
+      if (!githubInstallationId) {
+        throw new Error('Please authorize with GitHub first.');
       }
 
-      const headers: HeadersInit = {
-        Accept: 'application/vnd.github.v3+json',
-        Authorization: `token ${githubPAT.trim()}`,
-      };
-
-      const repoRes = await fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}`, {
-        headers,
-      });
+      const repoRes = await fetch(`http://localhost:3001/api/github/repos/${parsed.owner}/${parsed.repo}?installationId=${githubInstallationId}`);
 
       if (repoRes.status === 401 || repoRes.status === 403) {
         throw new Error('Invalid token or no access to this repository.');
@@ -120,8 +220,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
       const branch = repoData.default_branch || 'main';
 
       const treeRes = await fetch(
-        `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/trees/${branch}?recursive=1`,
-        { headers }
+        `http://localhost:3001/api/github/repos/${parsed.owner}/${parsed.repo}/git/trees/${branch}?installationId=${githubInstallationId}&recursive=1`
       );
 
       if (!treeRes.ok) {
@@ -139,8 +238,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
 
       const mainFile = jsFiles.find((f: any) => /^(index|main|handler)\.(js|mjs|ts|tsx)$/.test(f.path)) || jsFiles[0];
       const contentRes = await fetch(
-        `https://api.github.com/repos/${parsed.owner}/${parsed.repo}/contents/${encodeURIComponent(mainFile.path)}?ref=${branch}`,
-        { headers }
+        `http://localhost:3001/api/github/repos/${parsed.owner}/${parsed.repo}/contents/${encodeURIComponent(mainFile.path)}?installationId=${githubInstallationId}&ref=${branch}`
       );
 
       if (!contentRes.ok) {
@@ -407,28 +505,41 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
 
             {mode === "code" && (
               <div className="max-w-[600px]">
-                <p className="text-[12px] text-sub mb-8">Provide your GitHub repository and authentication details to deploy your code.</p>
-                
+                <p className="text-[12px] text-sub mb-8">Connect your GitHub account and provide repository details to deploy your code.</p>
+
+                {!isGitHubAuthorized ? (
+                  <div className="mb-8">
+                    <div className="border border-border bg-surface p-6 rounded text-center">
+                      <div className="text-2xl mb-4">🐙</div>
+                      <p className="text-[12px] text-white mb-2">GitHub Authorization Required</p>
+                      <p className="text-[10px] text-sub mb-4">Authorize access to your repositories to deploy code directly from GitHub.</p>
+                      <CyanBtn onClick={initiateGitHubAuth}>
+                        Authorize with GitHub
+                      </CyanBtn>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mb-8">
+                    <div className="border border-green-500/30 bg-green-500/5 p-4 rounded mb-6">
+                      <div className="flex items-center gap-3">
+                        <div className="text-green-400">✓</div>
+                        <div>
+                          <p className="text-[11px] text-green-400">Authorized as {githubUser?.login}</p>
+                          <p className="text-[9px] text-sub">You can now deploy from your repositories</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="mb-6">
-                  <TextInput 
-                    label="Repository" 
-                    value={githubRepo} 
-                    onChange={setGithubRepo} 
-                    placeholder="owner/repo" 
+                  <TextInput
+                    label="Repository"
+                    value={githubRepo}
+                    onChange={setGithubRepo}
+                    placeholder="owner/repo"
                   />
                   <p className="text-[10px] text-muted mt-2">Example: myusername/myrepo</p>
-                </div>
-
-                <div className="mb-8">
-                  <label className="text-[10px] uppercase tracking-widest text-sub block mb-2">GitHub Token</label>
-                  <input
-                    type="password"
-                    value={githubPAT}
-                    onChange={(e) => setGithubPAT(e.target.value)}
-                    placeholder="ghp_..."
-                    className="w-full bg-surface border border-border p-3 text-white text-[12px] focus:outline focus:outline-1 focus:outline-cyan-primary/50 transition-colors"
-                  />
-                  <p className="text-[10px] text-muted mt-2">Your token is not stored. Create one at github.com/settings/tokens</p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-8">
@@ -441,10 +552,10 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
                 )}
 
                 <div className="flex gap-3">
-                  <CyanBtn onClick={validateAndDeploy} disabled={isAuthenticating || isSubmitting || !githubRepo.trim() || !githubPAT.trim()}>
+                  <CyanBtn onClick={validateAndDeploy} disabled={isAuthenticating || isSubmitting || !githubRepo.trim() || !isGitHubAuthorized}>
                     {isAuthenticating || isSubmitting ? 'Deploying...' : 'Deploy →'}
                   </CyanBtn>
-                  <GhostBtn onClick={() => { setMode(null); setGithubError(null); setGithubRepo(''); setGithubPAT(''); }} disabled={isAuthenticating || isSubmitting}>
+                  <GhostBtn onClick={() => { setMode(null); setGithubError(null); setGithubRepo(''); }} disabled={isAuthenticating || isSubmitting}>
                     Cancel
                   </GhostBtn>
                 </div>
