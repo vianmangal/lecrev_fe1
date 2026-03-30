@@ -19,7 +19,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
   const [file, setFile] = useState<File | null>(null);
   const [codeVal, setCodeVal] = useState(DEFAULT_HANDLER);
   const [functionVal, setFunctionVal] = useState(DEFAULT_HANDLER);
-  const [projectId, setProjectId] = useState(defaultProjectId || 'demo');
+  const [projectId, setProjectId] = useState(defaultProjectId);
   const [environment, setEnvironment] = useState<'Production' | 'Staging' | 'Preview'>('Production');
   const [region, setRegion] = useState(regionOptions[0] || 'ap-south-1');
   const [functionName, setFunctionName] = useState('ui-function');
@@ -31,7 +31,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setProjectId(defaultProjectId || 'demo');
+    setProjectId(defaultProjectId);
   }, [defaultProjectId]);
 
   useEffect(() => {
@@ -63,7 +63,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
       throw new Error('Select a deployment mode first.');
     }
     const selectedRegion = region.trim() || regionOptions[0] || 'ap-south-1';
-    const cleanedProject = projectId.trim() || defaultProjectId.trim() || 'demo';
+    const cleanedProject = projectId.trim() || defaultProjectId.trim();
     const cleanedName = sanitizeName(functionName);
 
     if (mode === 'file') {
@@ -166,7 +166,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
   ];
 
   return (
-    <div className="flex-1 overflow-y-auto p-12">
+    <div className="flex-1 overflow-y-auto p-4 sm:p-8 md:p-12">
       <button
         onClick={onBack}
         className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.15em] text-sub bg-transparent border-none cursor-pointer mb-12 p-0 hover:text-white transition-colors"
@@ -182,7 +182,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
         <p className="text-[10px] text-muted mt-2 uppercase tracking-[0.12em]">V1 runtime is node22 with APAC regions.</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-5 mb-10 max-w-[780px]">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-10 max-w-[780px]">
         <TextInput label="Project ID" value={projectId} onChange={setProjectId} placeholder="demo" />
         <TextInput label="Function Name" value={functionName} onChange={setFunctionName} placeholder="ui-function" />
         <SelectInput label="Environment" options={["Production", "Staging", "Preview"]} value={environment} onChange={(value) => setEnvironment(value as 'Production' | 'Staging' | 'Preview')} />
@@ -195,7 +195,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="grid grid-cols-3 gap-[2px] mb-12 bg-border"
+            className="grid grid-cols-1 sm:grid-cols-3 gap-[2px] mb-12 bg-border"
           >
             {OPTIONS.map(opt => (
               <button

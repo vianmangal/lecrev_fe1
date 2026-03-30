@@ -16,7 +16,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signin', 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simulate auth delay
     setTimeout(() => {
       setIsLoading(false);
       onSuccess();
@@ -25,7 +24,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signin', 
 
   return (
     <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center p-6 overflow-hidden">
-      {/* Background Accents */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none opacity-20">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-cyan-primary/10 blur-[120px]" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-cyan-primary/5 blur-[120px]" />
@@ -137,7 +135,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signin', 
         </div>
       </motion.div>
 
-      {/* System Status Footer */}
       <div className="absolute bottom-6 left-6 right-6 flex justify-between text-[9px] uppercase tracking-[0.2em] text-muted pointer-events-none">
         <span>Auth_Protocol: TLS_1.3</span>
         <span>Status: Ready</span>

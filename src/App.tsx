@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { LayoutGrid, List, Settings, ChevronDown, Globe, Zap, Cpu } from 'lucide-react';
+import { LayoutGrid, List, Settings, ChevronDown, Globe } from 'lucide-react';
 import { ProjectsScreen, DeploymentsScreen } from './Screens';
 import { DetailScreen } from './DetailScreen';
 import { SettingsScreen } from './SettingsScreen';
@@ -8,7 +8,6 @@ import { DeployPage } from './DeployPage';
 import { AuthScreen } from './AuthScreen';
 import { CyanBtn } from './components/UI';
 import { Deployment, LogEntry, Project } from './types';
-import { DEPLOYS, PROJECTS } from './constants';
 import {
   ApiConnection,
   DeployRequestInput,
@@ -35,11 +34,10 @@ import {
 type ScreenName = 'projects' | 'deployments' | 'settings' | 'detail' | 'deploy';
 
 const CONNECTION_STORAGE_KEY = 'lecrev.ui.connection';
-const FALLBACK_REGIONS = ['ap-south-1', 'ap-south-2', 'ap-southeast-1'];
 const DEFAULT_CONNECTION: ApiConnection = {
   baseUrl: (import.meta.env.VITE_LECREV_API_BASE_URL ?? '').trim(),
-  apiKey: (import.meta.env.VITE_LECREV_API_KEY ?? 'dev-root-key').trim() || 'dev-root-key',
-  projectId: (import.meta.env.VITE_LECREV_PROJECT_ID ?? 'demo').trim() || 'demo',
+  apiKey: (import.meta.env.VITE_LECREV_API_KEY ?? '').trim(),
+  projectId: (import.meta.env.VITE_LECREV_PROJECT_ID ?? '').trim(),
 };
 
 function loadConnection(): ApiConnection {
@@ -134,7 +132,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'signin' | 'register' | null>(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [connection, setConnection] = useState<ApiConnection>(() => loadConnection());
-  const [availableRegions, setAvailableRegions] = useState<string[]>(FALLBACK_REGIONS);
+  const [availableRegions, setAvailableRegions] = useState<string[]>([]);
   const [liveDeployments, setLiveDeployments] = useState<LiveDeploymentRecord[]>([]);
   const [backendProjects, setBackendProjects] = useState<ProjectRecord[]>([]);
   const [backendDeployments, setBackendDeployments] = useState<DeploymentSummary[]>([]);
@@ -156,9 +154,9 @@ export default function App() {
     let nextError: string | null = null;
 
     if (regionsResult.status === 'fulfilled') {
-      setAvailableRegions(regionsResult.value.length > 0 ? regionsResult.value.map((row) => row.name) : FALLBACK_REGIONS);
+      setAvailableRegions(regionsResult.value.map((row) => row.name));
     } else {
-      setAvailableRegions(FALLBACK_REGIONS);
+      setAvailableRegions([]);
       nextError = regionsResult.reason instanceof Error ? regionsResult.reason.message : 'Unable to load region catalog.';
     }
 
@@ -359,13 +357,6 @@ export default function App() {
       map.set(row.id, row);
     }
 
-    for (const row of DEPLOYS) {
-      if (!map.has(row.id)) {
-        order.push(row.id);
-        map.set(row.id, row);
-      }
-    }
-
     return order
       .map((id) => map.get(id))
       .filter((row): row is Deployment => Boolean(row));
@@ -427,12 +418,6 @@ export default function App() {
     for (const [projectID, rows] of deploymentsByProject.entries()) {
       if (!map.has(projectID)) {
         map.set(projectID, buildProjectRow(projectID, projectNames.get(projectID) || projectID, rows));
-      }
-    }
-
-    for (const project of PROJECTS) {
-      if (!map.has(project.id)) {
-        map.set(project.id, project);
       }
     }
 
@@ -542,7 +527,7 @@ export default function App() {
 
       <motion.aside
         animate={{ width: sidebarExpanded ? 240 : 64 }}
-        className="border-r border-border flex flex-col py-6 shrink-0 bg-surface/50 backdrop-blur-xl"
+        className="border-r border-border hidden md:flex flex-col py-6 shrink-0 bg-surface/50 backdrop-blur-xl"
       >
         <div className={`px-4 mb-10 flex items-center ${sidebarExpanded ? 'gap-3' : 'justify-center'}`}>
           <div className="text-white shrink-0">
@@ -601,7 +586,7 @@ export default function App() {
       </motion.aside>
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-16 border-b border-border flex items-center justify-between px-8 shrink-0">
+        <header className="h-16 border-b border-border flex items-center justify-between px-4 sm:px-6 md:px-8 shrink-0">
           <div className="flex items-center gap-4">
             <AnimatePresence mode="wait">
               {screen === 'detail' && activeProj && (
@@ -625,16 +610,16 @@ export default function App() {
             </AnimatePresence>
           </div>
 
-          <div className="flex items-center gap-4">
-            <div className="flex border border-border rounded-md overflow-hidden">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="hidden sm:flex border border-border rounded-md overflow-hidden">
               <SplitAuthBtn onClick={() => setAuthMode('signin')}>Sign In</SplitAuthBtn>
               <div className="w-[1px] bg-border" />
               <SplitAuthBtn onClick={() => setAuthMode('register')}>Register</SplitAuthBtn>
             </div>
 
-            <div className="w-[1px] h-5 bg-border" />
+            <div className="hidden sm:block w-[1px] h-5 bg-border" />
 
-            <div className="relative">
+            <div className="hidden sm:block relative">
               <button
                 onClick={() => setAcctOpen(!acctOpen)}
                 className={`flex items-center gap-1.5 text-[10px] uppercase tracking-[0.15em] transition-colors duration-150 bg-transparent border-none px-1 py-1.5 cursor-pointer ${acctOpen ? 'text-white' : 'text-sub'}`}
@@ -700,21 +685,49 @@ export default function App() {
           </AnimatePresence>
         </main>
 
-        <footer className="h-8 border-t border-border px-4 flex items-center justify-between shrink-0">
+        <footer className="hidden md:flex h-8 border-t border-border px-4 items-center justify-between shrink-0">
           <div className="flex items-center gap-6 text-[9px] uppercase tracking-[0.15em] text-muted">
             <div className="flex items-center gap-1.5">
               <div className={`w-1.5 h-1.5 rounded-full ${integrationError ? 'bg-amber-500' : 'bg-cyan-primary'}`} />
               LECREV_SYSTEM_CORE
             </div>
-            <span className="flex items-center gap-1"><Globe size={10} /> {availableRegions[0] || 'ap-south-1'}</span>
-            <span className="flex items-center gap-1"><Zap size={10} /> 200ms</span>
+            {availableRegions[0] && <span className="flex items-center gap-1"><Globe size={10} /> {availableRegions[0]}</span>}
           </div>
           <div className="flex gap-6 text-[9px] uppercase tracking-[0.15em] text-muted">
             <span>{integrationError ? 'API: Degraded' : 'API: Connected'}</span>
-            <span className="flex items-center gap-1"><Cpu size={10} /> 8%</span>
             <span>{new Date().toLocaleTimeString('en-GB', { hour12: false })}</span>
           </div>
         </footer>
+
+        <nav className="md:hidden flex items-center justify-around border-t border-border bg-surface/95 backdrop-blur-xl h-14 shrink-0">
+          <button
+            onClick={() => go('projects')}
+            className={`flex flex-col items-center gap-1 p-2 transition-colors ${screen === 'projects' || screen === 'detail' ? 'text-cyan-primary' : 'text-muted hover:text-white'}`}
+          >
+            <LayoutGrid size={18} strokeWidth={1.5} />
+            <span className="text-[8px] uppercase tracking-[0.1em]">Projects</span>
+          </button>
+          <button
+            onClick={() => go('deployments')}
+            className={`flex flex-col items-center gap-1 p-2 transition-colors ${screen === 'deployments' ? 'text-cyan-primary' : 'text-muted hover:text-white'}`}
+          >
+            <List size={18} strokeWidth={1.5} />
+            <span className="text-[8px] uppercase tracking-[0.1em]">Deploys</span>
+          </button>
+          <button
+            onClick={() => go('deploy')}
+            className="bg-cyan-primary text-black px-4 py-1.5 text-[9px] font-bold uppercase tracking-[0.15em]"
+          >
+            Deploy
+          </button>
+          <button
+            onClick={() => go('settings')}
+            className={`flex flex-col items-center gap-1 p-2 transition-colors ${screen === 'settings' ? 'text-cyan-primary' : 'text-muted hover:text-white'}`}
+          >
+            <Settings size={18} strokeWidth={1.5} />
+            <span className="text-[8px] uppercase tracking-[0.1em]">Settings</span>
+          </button>
+        </nav>
       </div>
     </div>
   );
@@ -784,8 +797,7 @@ function AccountDropdown({ onClose, onNavigate }: { onClose: () => void; onNavig
       className="absolute top-[calc(100%+8px)] right-0 bg-elevated border border-border-md w-[220px] z-[100] shadow-[0_16px_48px_rgba(0,0,0,0.8)]"
     >
       <div className="p-4 border-b border-border">
-        <p className="text-[12px] mb-1">alex.chen</p>
-        <p className="text-[10px] text-sub">alex@lecrev.sh</p>
+        <p className="text-[12px] mb-1">Account</p>
       </div>
       <div className="py-1">
         {items.map((item, index) => {

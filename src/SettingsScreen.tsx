@@ -28,7 +28,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ settingsTab, set
     onSaveConnection({
       baseUrl: baseUrl.trim(),
       apiKey: apiKey.trim(),
-      projectId: projectId.trim() || 'demo',
+      projectId: projectId.trim(),
     });
     setSavedAt(new Date().toLocaleTimeString('en-GB', { hour12: false }));
   };
@@ -39,10 +39,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ settingsTab, set
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
       transition={{ duration: 0.25, ease: 'easeOut' }}
-      className="flex-1 overflow-y-auto p-12 flex gap-16"
+      className="flex-1 overflow-y-auto p-4 sm:p-8 md:p-12 flex flex-col md:flex-row gap-8 md:gap-16"
     >
-      <nav className="w-40 shrink-0">
-        <p className="text-[10px] uppercase tracking-[0.15em] text-sub mb-4">Settings</p>
+      <nav className="flex flex-row md:flex-col md:w-40 shrink-0 gap-1 md:gap-0 overflow-x-auto md:overflow-visible pb-2 md:pb-0">
+        <p className="hidden md:block text-[10px] uppercase tracking-[0.15em] text-sub mb-4">Settings</p>
         {TABS.map((t) => {
           const key = t.toLowerCase().replace(' ', '_');
           const active = settingsTab === key;
@@ -52,7 +52,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ settingsTab, set
               key={t}
               onClick={() => setSettingsTab(key)}
               className={`
-                block w-full text-left text-[10px] uppercase tracking-[0.12em] bg-transparent border-none border-l py-2.5 pl-4 cursor-pointer transition-all duration-150
+                block shrink-0 text-left text-[10px] uppercase tracking-[0.12em] bg-transparent border-none border-l py-2.5 pl-4 cursor-pointer transition-all duration-150 whitespace-nowrap
                 ${active
                   ? (isDanger ? 'border-red-500 text-red-500' : 'border-white text-white')
                   : (isDanger ? 'border-border text-red-500/50' : 'border-border text-sub hover:text-neutral-300')}
@@ -75,8 +75,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ settingsTab, set
               className="flex flex-col gap-6"
             >
               <h3 className="text-sm uppercase tracking-tight font-normal mb-2">General</h3>
-              <TextInput label="Organisation Name" defaultValue="Lecrev" />
-              <TextInput label="Default Region" defaultValue="ap-south-1" />
               <SelectInput label="Build Runtime" options={['Node 22', 'Node 20 (LTS)', 'Bun 1.1', 'Deno 2.0']} />
 
               <div className="border border-border p-5 mt-4">
@@ -92,33 +90,31 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ settingsTab, set
                     label="X-API-Key"
                     value={apiKey}
                     onChange={setApiKey}
-                    placeholder="dev-root-key"
+                    placeholder="API key"
                   />
                   <TextInput
                     label="Default Project ID"
                     value={projectId}
                     onChange={setProjectId}
-                    placeholder="demo"
+                    placeholder="Project ID"
                   />
                 </div>
-                <div className="mt-4">
-                  <p className="text-[9px] uppercase tracking-[0.12em] text-muted mb-2">Supported Regions</p>
-                  <div className="flex flex-wrap gap-2">
-                    {(availableRegions.length ? availableRegions : ['ap-south-1', 'ap-south-2', 'ap-southeast-1']).map((region) => (
-                      <span key={region} className="text-[9px] uppercase tracking-[0.12em] border border-border px-2 py-1 text-sub">
-                        {region}
-                      </span>
-                    ))}
+                {availableRegions.length > 0 && (
+                  <div className="mt-4">
+                    <p className="text-[9px] uppercase tracking-[0.12em] text-muted mb-2">Supported Regions</p>
+                    <div className="flex flex-wrap gap-2">
+                      {availableRegions.map((region) => (
+                        <span key={region} className="text-[9px] uppercase tracking-[0.12em] border border-border px-2 py-1 text-sub">
+                          {region}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
                 <div className="flex items-center justify-between mt-5">
                   <span className="text-[9px] uppercase tracking-[0.12em] text-muted">{savedAt ? `Saved ${savedAt}` : 'Local browser storage'}</span>
                   <CyanBtn onClick={saveConnection}>Save Connection</CyanBtn>
                 </div>
-              </div>
-
-              <div className="flex justify-end">
-                <CyanBtn>Save Changes</CyanBtn>
               </div>
             </motion.div>
           )}
@@ -130,22 +126,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ settingsTab, set
               exit={{ opacity: 0, x: -10 }}
             >
               <h3 className="text-sm uppercase tracking-tight font-normal mb-8">Team</h3>
-              {[
-                { name: 'alex.chen', role: 'Owner', since: 'Jan 2024' },
-                { name: 'jamie.okonkwo', role: 'Admin', since: 'Mar 2024' },
-                { name: 'priya.sharma', role: 'Developer', since: 'Jun 2024' },
-              ].map((m) => (
-                <div key={m.name} className="flex items-center justify-between py-3.5 border-b border-border">
-                  <div>
-                    <p className="text-[12px]">{m.name}</p>
-                    <p className="text-[10px] uppercase tracking-[0.15em] text-muted mt-1">{m.since}</p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-[10px] uppercase tracking-[0.15em] text-sub">{m.role}</span>
-                    {m.role !== 'Owner' && <GhostBtn small>Remove</GhostBtn>}
-                  </div>
-                </div>
-              ))}
+              <div className="flex items-center justify-center h-32 text-[11px] text-sub uppercase tracking-[0.12em] border border-border">
+                No team members yet
+              </div>
               <div className="mt-6"><GhostBtn>+ Invite Member</GhostBtn></div>
             </motion.div>
           )}
@@ -157,16 +140,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ settingsTab, set
               exit={{ opacity: 0, x: -10 }}
             >
               <h3 className="text-sm uppercase tracking-tight font-normal mb-8">Domains</h3>
-              {['lecrev.sh', 'core-platform-v2.lecrev.app', 'api.lecrev.sh'].map((d, i) => (
-                <div key={d} className="flex items-center justify-between py-3 border-b border-border">
-                  <p className="text-[12px]">{d}</p>
-                  <div className="flex items-center gap-4">
-                    <span className="text-[9px] uppercase tracking-[0.15em] text-cyan-primary">Verified</span>
-                    {i > 0 && <GhostBtn small>Remove</GhostBtn>}
-                  </div>
-                </div>
-              ))}
-              <div className="mt-6 flex flex-col gap-3">
+              <div className="flex items-center justify-center h-32 text-[11px] text-sub uppercase tracking-[0.12em] border border-border mb-6">
+                No domains configured
+              </div>
+              <div className="flex flex-col gap-3">
                 <TextInput label="Add Domain" placeholder="yourdomain.com" />
                 <GhostBtn>+ Add Domain</GhostBtn>
               </div>
@@ -180,22 +157,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ settingsTab, set
               exit={{ opacity: 0, x: -10 }}
             >
               <h3 className="text-sm uppercase tracking-tight font-normal mb-8">API Keys</h3>
-              {[
-                { name: 'Production Key', key: 'lcr_pk_••••••••••••ab4f', created: '12 Jan 2025' },
-                { name: 'CI/CD Token', key: 'lcr_ci_••••••••••••92e1', created: '03 Mar 2025' },
-              ].map((k) => (
-                <div key={k.name} className="border border-border p-4 mb-2 flex items-center justify-between">
-                  <div>
-                    <p className="text-[12px] mb-1">{k.name}</p>
-                    <p className="text-[10px] text-sub">{k.key}</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[10px] uppercase tracking-[0.15em] text-muted">{k.created}</span>
-                    <GhostBtn danger small>Revoke</GhostBtn>
-                  </div>
-                </div>
-              ))}
-              <div className="mt-4"><GhostBtn>+ Generate New Key</GhostBtn></div>
+              <div className="flex items-center justify-center h-32 text-[11px] text-sub uppercase tracking-[0.12em] border border-border mb-4">
+                No API keys generated
+              </div>
+              <GhostBtn>+ Generate New Key</GhostBtn>
             </motion.div>
           )}
           {settingsTab === 'danger_zone' && (
