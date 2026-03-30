@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { DeployRequestInput } from './api';
+import { DeployRequestInput, LiveDeploymentRecord } from './api';
 import { DeployMode, DeployModePicker } from './components/deploy/DeployModePicker';
 import { FileDeployForm } from './components/deploy/FileDeployForm';
 import { FunctionDeployForm } from './components/deploy/FunctionDeployForm';
@@ -13,11 +13,12 @@ interface DeployPageProps {
   onDeploy: (request: DeployRequestInput) => Promise<{ versionId: string; buildJobId?: string }>;
   defaultProjectId: string;
   regionOptions: string[];
+  liveDeployments: LiveDeploymentRecord[];
 }
 
 const DEFAULT_HANDLER = "export async function handler(event, context) {\n  return { ok: true, echo: event, region: context.region, hostId: context.hostId };\n}\n";
 
-export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaultProjectId, regionOptions }) => {
+export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaultProjectId, regionOptions, liveDeployments }) => {
   const [mode, setMode] = useState<DeployMode | null>(null);
   const [dragging, setDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -28,6 +29,10 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
   const [error, setError] = useState<string | null>(null);
   const [deployInfo, setDeployInfo] = useState<{ versionId: string; buildJobId?: string } | null>(null);
   const [deployed, setDeployed] = useState(false);
+
+  const liveDeployment = deployInfo
+    ? liveDeployments.find((record) => record.version.id === deployInfo.versionId) ?? null
+    : null;
 
   useEffect(() => {
     if (regionOptions.length === 0) {
@@ -154,6 +159,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
     return (
       <DeploySuccess
         deploymentId={deployInfo?.buildJobId || deployInfo?.versionId || 'deployment'}
+        record={liveDeployment}
         onReset={reset}
         onViewDeployments={onBack}
       />

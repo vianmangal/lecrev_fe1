@@ -169,6 +169,7 @@ export default function App() {
                 onDeploy={handleDeploy}
                 defaultProjectId={connection.projectId}
                 regionOptions={availableRegions}
+                liveDeployments={liveDeployments}
               />
             )}
           </AnimatePresence>

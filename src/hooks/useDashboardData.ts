@@ -131,17 +131,16 @@ export function useDashboardData() {
     try {
       while (true) {
         const job = await getJob(conn, jobId);
+        const jobLogs = await getJobLogs(conn, jobId).catch(() => undefined);
         patchLiveDeployment(versionId, (record) => ({
           ...record,
           job,
+          jobLogs: jobLogs ?? record.jobLogs,
           error: job.state === 'failed' ? job.error || record.error : record.error,
         }));
 
         if (job.state === 'succeeded' || job.state === 'failed') {
-          const [jobLogs, jobOutput] = await Promise.all([
-            getJobLogs(conn, jobId).catch(() => undefined),
-            getJobOutput(conn, jobId).catch(() => undefined),
-          ]);
+          const jobOutput = await getJobOutput(conn, jobId).catch(() => undefined);
           patchLiveDeployment(versionId, (record) => ({
             ...record,
             job,
@@ -192,12 +191,14 @@ export function useDashboardData() {
           getBuildJob(conn, buildJobId),
           getFunctionVersion(conn, versionId),
         ]);
+        const buildLogs = await getBuildJobLogs(conn, buildJobId).catch(() => undefined);
         lastBuildState = buildJob;
         lastVersionState = version;
         patchLiveDeployment(versionId, (record) => ({
           ...record,
           version,
           buildJob,
+          buildLogs: buildLogs ?? record.buildLogs,
           error: buildJob.state === 'failed' || version.state === 'failed' ? buildJob.error || record.error : record.error,
         }));
 
@@ -208,14 +209,6 @@ export function useDashboardData() {
           break;
         }
         await sleep(1200);
-      }
-
-      const buildLogs = await getBuildJobLogs(conn, buildJobId).catch(() => undefined);
-      if (buildLogs) {
-        patchLiveDeployment(versionId, (record) => ({
-          ...record,
-          buildLogs,
-        }));
       }
 
       if (!lastBuildState || !lastVersionState) {
