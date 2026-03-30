@@ -1,8 +1,13 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { StatusBadge, CyanBtn, GhostBtn, TextInput } from './components/UI';
+import { StatusBadge } from './components/UI';
 import { Deployment, LogEntry, Project } from './types';
 import { HTTPTrigger } from './api';
+import { DetailInfoGrid } from './components/detail/DetailInfoGrid';
+import { FunctionURLPanel } from './components/detail/FunctionURLPanel';
+import { LogsPanel } from './components/detail/LogsPanel';
+import { ProjectSettingsPanel } from './components/detail/ProjectSettingsPanel';
+import { DeploymentTable } from './components/deployments/DeploymentTable';
 
 interface DetailScreenProps {
   project: Project | null;
@@ -63,67 +68,14 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({
         <StatusBadge status={project.status} />
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 sm:gap-6 mb-8 md:mb-12">
-        {infoRows.map(([k, v]) => (
-          <div key={k}>
-            <p className="text-[10px] uppercase tracking-[0.15em] text-sub mb-1.5">{k}</p>
-            <p className="text-[13px]">{v}</p>
-          </div>
-        ))}
-      </div>
+      <DetailInfoGrid rows={infoRows} />
 
-      <div className="border border-border bg-surface/40 p-4 sm:p-5 mb-8 md:mb-12">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div className="min-w-0">
-            <p className="text-[10px] uppercase tracking-[0.15em] text-cyan-primary mb-2">Function URL</p>
-            {latestFunctionURL ? (
-              <>
-                <p className="text-sm text-white break-all">{latestFunctionURL.url}</p>
-                <p className="text-[10px] uppercase tracking-[0.12em] text-sub mt-2">
-                  Public HTTP entrypoint for the latest deployment
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-sm text-white">No public URL generated yet.</p>
-                <p className="text-[10px] uppercase tracking-[0.12em] text-sub mt-2">
-                  Create one to invoke this function over HTTP like a Lambda Function URL
-                </p>
-              </>
-            )}
-            {functionURLError && (
-              <p className="text-[10px] uppercase tracking-[0.12em] text-red-500 mt-3">{functionURLError}</p>
-            )}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {latestFunctionURL && (
-              <>
-                <GhostBtn
-                  small
-                  onClick={() => {
-                    window.navigator.clipboard.writeText(latestFunctionURL.url).catch(() => undefined);
-                  }}
-                >
-                  Copy URL
-                </GhostBtn>
-                <GhostBtn
-                  small
-                  onClick={() => {
-                    window.open(latestFunctionURL.url, '_blank', 'noopener,noreferrer');
-                  }}
-                >
-                  Open URL
-                </GhostBtn>
-              </>
-            )}
-            {onCreateFunctionURL && (
-              <CyanBtn onClick={onCreateFunctionURL} className="px-4 py-1.5" disabled={functionURLBusy}>
-                {latestFunctionURL ? 'Refresh URL' : functionURLBusy ? 'Creating...' : 'Generate URL'}
-              </CyanBtn>
-            )}
-          </div>
-        </div>
-      </div>
+      <FunctionURLPanel
+        latestFunctionURL={latestFunctionURL}
+        busy={functionURLBusy}
+        error={functionURLError}
+        onCreate={onCreateFunctionURL}
+      />
 
       <div className="border-b border-border flex gap-5 sm:gap-8 mb-8 relative overflow-x-auto whitespace-nowrap">
         {TABS.map((t) => (
@@ -155,34 +107,7 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.2 }}
           >
-            {deployments.length === 0 ? (
-              <div className="flex items-center justify-center h-32 text-[11px] text-sub uppercase tracking-[0.12em]">
-                No deployments yet
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <div className="min-w-[700px]">
-                  <div className="grid grid-cols-[1.8fr_1.4fr_1.1fr_1fr_1.1fr_1.1fr_0.7fr] gap-3 pb-3 border-b border-border mb-[1px]">
-                    {['Deployment', 'Project', 'Branch', 'Commit', 'Environment', 'Status', 'Age'].map((h) => (
-                      <span key={h} className="text-[10px] uppercase tracking-[0.15em] text-sub">{h}</span>
-                    ))}
-                  </div>
-                  <div className="bg-border space-y-[1px]">
-                    {deployments.slice(0, 4).map((d) => (
-                      <div key={d.id} className="grid grid-cols-[1.8fr_1.4fr_1.1fr_1fr_1.1fr_1.1fr_0.7fr] gap-3 py-3.5 px-0 bg-black items-center hover:bg-surface transition-colors duration-150 group">
-                        <span className="text-[10px] text-muted truncate">{d.id}</span>
-                        <span className="text-[12px] text-white group-hover:text-cyan-primary transition-colors duration-150">{d.project}</span>
-                        <span className="text-[11px] text-neutral-400">{d.branch}</span>
-                        <span className="text-[11px] text-neutral-400">{d.commit}</span>
-                        <StatusBadge status={d.env} />
-                        <StatusBadge status={d.status} />
-                        <span className="text-[11px] text-sub">{d.age}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
+            <DeploymentTable deployments={deployments} emptyLabel="No deployments yet" limit={4} />
           </motion.div>
         )}
         {activeTab === 'logs' && (
@@ -194,21 +119,7 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({
             transition={{ duration: 0.2 }}
             className="border border-border"
           >
-            {logs.length === 0 ? (
-              <div className="flex items-center justify-center h-32 text-[11px] text-sub uppercase tracking-[0.12em]">
-                No logs available
-              </div>
-            ) : (
-              logs.map((l, i) => (
-                <div key={i} className={`flex gap-4 sm:gap-6 p-2.5 items-baseline ${i % 2 === 0 ? 'bg-surface' : 'bg-black'}`}>
-                  <span className="text-[11px] text-neutral-600 shrink-0 w-[80px] sm:w-[110px]">{l.t}</span>
-                  <span className={`text-[10px] uppercase tracking-[0.12em] shrink-0 w-11 ${l.level === 'ERROR' ? 'text-red-500' : l.level === 'WARN' ? 'text-amber-500' : 'text-cyan-primary'}`}>
-                    {l.level}
-                  </span>
-                  <span className="text-[12px] text-neutral-200 min-w-0 break-all">{l.msg}</span>
-                </div>
-              ))
-            )}
+            <LogsPanel logs={logs} />
           </motion.div>
         )}
         {activeTab === 'settings' && (
@@ -220,11 +131,7 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({
             transition={{ duration: 0.2 }}
             className="max-w-[460px] flex flex-col gap-6"
           >
-            <TextInput label="Project Name" defaultValue={project.name} />
-            <TextInput label="Domain" defaultValue={project.url} />
-            <div className="flex justify-end pt-2">
-              <CyanBtn>Save Changes</CyanBtn>
-            </div>
+            <ProjectSettingsPanel name={project.name} url={project.url} />
           </motion.div>
         )}
       </AnimatePresence>

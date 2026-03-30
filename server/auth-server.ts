@@ -8,6 +8,7 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local'), override: true });
 
 const { auth, isGithubAuthConfigured } = await import('./auth');
+const { createGitHubAppRouter, isGithubAppConfigured } = await import('./github-app');
 
 const app = express();
 const authHandler = toNodeHandler(auth);
@@ -18,11 +19,13 @@ const handleAuthRequest = (req: express.Request, res: express.Response) => {
 
 app.all('/api/auth', handleAuthRequest);
 app.all('/api/auth/*', handleAuthRequest);
+app.use('/api/github', createGitHubAppRouter());
 
 app.get('/health/auth', (_req, res) => {
   res.json({
     ok: true,
     githubConfigured: isGithubAuthConfigured,
+    githubAppConfigured: isGithubAppConfigured,
   });
 });
 

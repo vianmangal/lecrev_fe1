@@ -30,6 +30,10 @@ export default defineConfig(({mode}) => {
           target: authTarget,
           changeOrigin: true,
         },
+        '/api/github': {
+          target: authTarget,
+          changeOrigin: true,
+        },
         '/v1': {
           target: apiTarget,
           changeOrigin: true,
