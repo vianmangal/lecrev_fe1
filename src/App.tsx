@@ -11,6 +11,7 @@ import { useDashboardData } from './hooks/useDashboardData';
 import { useDetailLogs } from './hooks/useDetailLogs';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
+import { LandingPage } from './components/landing/LandingPage';
 
 type ScreenName = 'projects' | 'deployments' | 'settings' | 'detail' | 'deploy';
 
@@ -86,7 +87,6 @@ export default function App() {
     deployment.status === 'Active' || deployment.status === 'Ready'
   ))?.id ?? activeDetailDeploymentID;
   const detailLogs = useDetailLogs(connection, activeTab, activeDetailDeploymentID, liveDeployments);
-
   useEffect(() => {
     if (!functionURLDeploymentID) {
       setDetailFunctionURLs([]);
@@ -145,13 +145,15 @@ export default function App() {
     setAcctOpen(false);
   };
 
+  const showLanding = !activeUser;
+
   return (
-    <div className="flex h-screen bg-bg text-white overflow-hidden font-sans">
+    <div className="bg-bg text-white font-sans">
       <AnimatePresence>
-        {(authRequired || authMode) && (
+        {authMode && (
           <AuthScreen
             initialMode={authMode ?? 'signin'}
-            required={authRequired}
+            required={false}
             githubConfigured={githubConfigured === true}
             onSuccess={() => {
               void refetchSession();
@@ -164,84 +166,91 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <Sidebar
-        expanded={sidebarExpanded}
-        onToggleExpanded={() => setSidebarExpanded((current) => !current)}
-        screen={screen}
-        onNavigate={(nextScreen) => go(nextScreen)}
-      />
-
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header
-          screen={screen}
-          activeProject={activeProj}
-          activeUser={activeUser}
-          isSessionPending={isSessionPending}
-          authRequired={authRequired}
-          accountOpen={acctOpen}
-          onSetAuthMode={setAuthMode}
-          onToggleAccount={() => setAcctOpen((current) => !current)}
-          onCloseAccount={() => setAcctOpen(false)}
-          onNavigateProjects={() => go('projects')}
-          onNavigateSettings={() => go('settings')}
-          onNavigateDeploy={() => go('deploy')}
-          onSignOut={handleSignOut}
+      {showLanding ? (
+        <LandingPage
+          onSignIn={() => setAuthMode('signin')}
         />
+      ) : (
+        <div className="flex h-screen overflow-hidden">
+          <Sidebar
+            expanded={sidebarExpanded}
+            onToggleExpanded={() => setSidebarExpanded((current) => !current)}
+            screen={screen}
+            onNavigate={(nextScreen) => go(nextScreen)}
+          />
 
-        <main className="flex-1 overflow-hidden relative flex flex-col">
-          <AnimatePresence mode="wait">
-            {screen === 'projects' && (
-              <ProjectsScreen
-                key="projects"
-                onViewProject={(project) => {
-                  setActiveProj(project);
-                  go('detail');
-                }}
-                projects={projectRows}
-              />
-            )}
-            {screen === 'deployments' && <DeploymentsScreen key="deployments" deployments={deploymentRows} />}
-            {screen === 'detail' && (
-              <DetailScreen
-                key="detail"
-                project={activeProj}
-                activeTab={activeTab}
-                setActiveTab={setActiveTab}
-                deployments={detailDeployments}
-                logs={detailLogs}
-                functionURLs={detailFunctionURLs}
-                functionURLBusy={functionURLBusy}
-                functionURLError={functionURLError}
-                onCreateFunctionURL={() => {
-                  void handleCreateFunctionURL();
-                }}
-              />
-            )}
-            {screen === 'settings' && (
-              <SettingsScreen
-                key="settings"
-                settingsTab={settingsTab}
-                setSettingsTab={setSettingsTab}
-                connection={connection}
-                onSaveConnection={saveConnection}
-                availableRegions={availableRegions}
-              />
-            )}
-            {screen === 'deploy' && (
-              <DeployPage
-                key="deploy"
-                onBack={() => go('deployments')}
-                onDeploy={handleDeploy}
-                defaultProjectId={connection.projectId}
-                regionOptions={availableRegions}
-                liveDeployments={liveDeployments}
-                connection={connection}
-              />
-            )}
-          </AnimatePresence>
-        </main>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <Header
+              screen={screen}
+              activeProject={activeProj}
+              activeUser={activeUser}
+              isSessionPending={isSessionPending}
+              authRequired={authRequired}
+              accountOpen={acctOpen}
+              onSetAuthMode={setAuthMode}
+              onToggleAccount={() => setAcctOpen((current) => !current)}
+              onCloseAccount={() => setAcctOpen(false)}
+              onNavigateProjects={() => go('projects')}
+              onNavigateSettings={() => go('settings')}
+              onNavigateDeploy={() => go('deploy')}
+              onSignOut={handleSignOut}
+            />
 
-      </div>
+            <main className="flex-1 overflow-hidden relative flex flex-col">
+              <AnimatePresence mode="wait">
+                {screen === 'projects' && (
+                  <ProjectsScreen
+                    key="projects"
+                    onViewProject={(project) => {
+                      setActiveProj(project);
+                      go('detail');
+                    }}
+                    projects={projectRows}
+                  />
+                )}
+                {screen === 'deployments' && <DeploymentsScreen key="deployments" deployments={deploymentRows} />}
+                {screen === 'detail' && (
+                  <DetailScreen
+                    key="detail"
+                    project={activeProj}
+                    activeTab={activeTab}
+                    setActiveTab={setActiveTab}
+                    deployments={detailDeployments}
+                    logs={detailLogs}
+                    functionURLs={detailFunctionURLs}
+                    functionURLBusy={functionURLBusy}
+                    functionURLError={functionURLError}
+                    onCreateFunctionURL={() => {
+                      void handleCreateFunctionURL();
+                    }}
+                  />
+                )}
+                {screen === 'settings' && (
+                  <SettingsScreen
+                    key="settings"
+                    settingsTab={settingsTab}
+                    setSettingsTab={setSettingsTab}
+                    connection={connection}
+                    onSaveConnection={saveConnection}
+                    availableRegions={availableRegions}
+                  />
+                )}
+                {screen === 'deploy' && (
+                  <DeployPage
+                    key="deploy"
+                    onBack={() => go('deployments')}
+                    onDeploy={handleDeploy}
+                    defaultProjectId={connection.projectId}
+                    regionOptions={availableRegions}
+                    liveDeployments={liveDeployments}
+                    connection={connection}
+                  />
+                )}
+              </AnimatePresence>
+            </main>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

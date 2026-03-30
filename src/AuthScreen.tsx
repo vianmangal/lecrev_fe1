@@ -114,7 +114,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               onClick={onBack}
               className="text-[10px] text-muted hover:text-white transition-colors bg-transparent border-none cursor-pointer"
             >
-              ← Return to Dashboard
+              ← Return
             </button>
           )}
         </div>

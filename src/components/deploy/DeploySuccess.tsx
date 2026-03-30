@@ -47,36 +47,18 @@ export function DeploySuccess({
   const [monitorError, setMonitorError] = useState<string | null>(record?.error ?? null);
 
   useEffect(() => {
-    if (record?.version) {
-      setVersion(record.version);
-    }
-    if (record?.buildJob) {
-      setBuildJob(record.buildJob);
-    }
-    if (record?.job) {
-      setJob(record.job);
-    }
-    if (record?.buildLogs) {
-      setBuildLogs(record.buildLogs);
-    }
-    if (record?.jobLogs) {
-      setJobLogs(record.jobLogs);
-    }
-    if (record?.jobOutput !== undefined) {
-      setJobOutput(record.jobOutput);
-    }
-    if (record?.functionURLs?.[0]) {
-      setFunctionURL(record.functionURLs[0]);
-    }
-    if (record?.error) {
-      setMonitorError(record.error);
-    }
+    if (record?.version) setVersion(record.version);
+    if (record?.buildJob) setBuildJob(record.buildJob);
+    if (record?.job) setJob(record.job);
+    if (record?.buildLogs) setBuildLogs(record.buildLogs);
+    if (record?.jobLogs) setJobLogs(record.jobLogs);
+    if (record?.jobOutput !== undefined) setJobOutput(record.jobOutput);
+    if (record?.functionURLs?.[0]) setFunctionURL(record.functionURLs[0]);
+    if (record?.error) setMonitorError(record.error);
   }, [record]);
 
   useEffect(() => {
-    if (!versionId) {
-      return;
-    }
+    if (!versionId) return;
 
     let cancelled = false;
 
@@ -88,9 +70,7 @@ export function DeploySuccess({
       while (!cancelled) {
         try {
           const nextVersion = await getFunctionVersion(connection, versionId);
-          if (cancelled) {
-            return;
-          }
+          if (cancelled) return;
           setVersion(nextVersion);
           activeBuildJobId = activeBuildJobId ?? nextVersion.buildJobId;
           let nextBuildState: BuildJob | undefined;
@@ -99,21 +79,15 @@ export function DeploySuccess({
 
           if (activeBuildJobId) {
             nextBuildState = await getBuildJob(connection, activeBuildJobId);
-            if (cancelled) {
-              return;
-            }
+            if (cancelled) return;
             setBuildJob(nextBuildState);
             const nextBuildLogs = await getBuildJobLogs(connection, activeBuildJobId).catch(() => undefined);
-            if (!cancelled && nextBuildLogs) {
-              setBuildLogs(nextBuildLogs);
-            }
+            if (!cancelled && nextBuildLogs) setBuildLogs(nextBuildLogs);
           }
 
           if (nextVersion.state === 'ready') {
             const existingTriggers = await listHTTPTriggers(connection, versionId).catch(() => [] as HTTPTrigger[]);
-            if (cancelled) {
-              return;
-            }
+            if (cancelled) return;
             if (existingTriggers.length > 0) {
               nextFunctionURL = existingTriggers[0];
               setFunctionURL(nextFunctionURL);
@@ -133,19 +107,13 @@ export function DeploySuccess({
           activeJobId = record?.job?.id ?? activeJobId;
           if (activeJobId) {
             nextJobState = await getJob(connection, activeJobId);
-            if (cancelled) {
-              return;
-            }
+            if (cancelled) return;
             setJob(nextJobState);
             const nextJobLogs = await getJobLogs(connection, activeJobId).catch(() => undefined);
-            if (!cancelled && nextJobLogs) {
-              setJobLogs(nextJobLogs);
-            }
+            if (!cancelled && nextJobLogs) setJobLogs(nextJobLogs);
             if (nextJobState.state === 'succeeded') {
               const output = await getJobOutput(connection, activeJobId).catch(() => undefined);
-              if (!cancelled && output !== undefined) {
-                setJobOutput(output);
-              }
+              if (!cancelled && output !== undefined) setJobOutput(output);
             }
           }
 
@@ -157,9 +125,7 @@ export function DeploySuccess({
             return;
           }
         } catch (err) {
-          if (!cancelled) {
-            setMonitorError(err instanceof Error ? err.message : 'Unable to monitor deployment.');
-          }
+          if (!cancelled) setMonitorError(err instanceof Error ? err.message : 'Unable to monitor deployment.');
           return;
         }
 
@@ -167,9 +133,7 @@ export function DeploySuccess({
       }
     })();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [buildJobId, connection, record, versionId]);
 
   const effectiveVersion = version ?? record?.version;
@@ -184,7 +148,6 @@ export function DeploySuccess({
     effectiveJob?.state === 'failed',
   );
   const isActive = effectiveJob?.state === 'succeeded';
-  const isRunning = !hasFailed && !isActive;
 
   const statusLabel = hasFailed
     ? 'Deployment Failed'
@@ -205,16 +168,15 @@ export function DeploySuccess({
         ? 'Error'
         : '';
 
-  const statusRows = [
+  const statusRows: Array<[string, string]> = [
     ['Build', effectiveBuildJob?.state ?? 'queued'],
     ['Version', effectiveVersion?.state ?? 'queued'],
     ['Execution', effectiveJob?.state ?? 'waiting'],
+    ...(effectiveJob?.result?.latencyMs ? [['Latency', `${effectiveJob.result.latencyMs} ms`] as [string, string]] : []),
   ];
 
   const formattedOutput = useMemo(() => {
-    if (jobOutput === undefined) {
-      return '';
-    }
+    if (jobOutput === undefined) return '';
     try {
       return JSON.stringify(jobOutput, null, 2);
     } catch {
@@ -222,98 +184,109 @@ export function DeploySuccess({
     }
   }, [jobOutput]);
 
+  const statusColor = hasFailed
+    ? 'border-red-500 text-red-500'
+    : isActive
+      ? 'border-cyan-primary text-cyan-primary'
+      : 'border-amber-400 text-amber-400';
+
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="flex-1 flex flex-col items-center justify-center gap-6 px-4 py-10"
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      transition={{ duration: 0.22, ease: 'easeOut' }}
+      className="flex-1 overflow-y-auto p-4 sm:p-8 md:p-12"
     >
-      <div className={`w-14 h-14 rounded-full border flex items-center justify-center ${hasFailed ? 'border-red-500 text-red-500' : isActive ? 'border-cyan-primary text-cyan-primary' : 'border-amber-400 text-amber-400'}`}>
-        {hasFailed ? <AlertTriangle size={30} /> : isActive ? <CheckCircle2 size={32} /> : <LoaderCircle size={30} className="animate-spin" />}
-      </div>
-      <p className="text-sm uppercase tracking-[0.1em]">{statusLabel}</p>
-      <p className="text-[11px] text-sub">{deploymentId}</p>
-
-      <div className="w-full max-w-[720px] border border-border bg-surface/40 p-5">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {statusRows.map(([label, value]) => (
-            <div key={label}>
-              <p className="text-[10px] uppercase tracking-[0.15em] text-sub mb-1.5">{label}</p>
-              <p className="text-[12px] uppercase tracking-[0.08em]">{value}</p>
-            </div>
-          ))}
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-8 md:mb-12">
+        <div className={`w-10 h-10 rounded-full border flex items-center justify-center shrink-0 ${statusColor}`}>
+          {hasFailed
+            ? <AlertTriangle size={18} />
+            : isActive
+              ? <CheckCircle2 size={18} />
+              : <LoaderCircle size={18} className="animate-spin" />}
         </div>
+        <div>
+          <h2 className="text-2xl sm:text-3xl md:text-4xl tracking-tighter font-normal">
+            {statusLabel}
+          </h2>
+          <p className="text-[10px] uppercase tracking-[0.15em] text-sub mt-1">{deploymentId}</p>
+        </div>
+      </div>
 
-        {effectiveJob?.result?.latencyMs ? (
-          <div className="mt-4 pt-4 border-t border-border">
-            <p className="text-[10px] uppercase tracking-[0.15em] text-sub mb-1.5">Latency</p>
-            <p className="text-[12px]">{effectiveJob.result.latencyMs} ms</p>
+      {/* Status grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 mb-8 md:mb-12">
+        {statusRows.map(([key, value]) => (
+          <div key={key}>
+            <p className="text-[10px] uppercase tracking-[0.15em] text-sub mb-1.5">{key}</p>
+            <p className="text-[13px]">{value}</p>
           </div>
-        ) : null}
+        ))}
+      </div>
 
-        <div className="mt-4 pt-4 border-t border-border">
-          <p className="text-[10px] uppercase tracking-[0.15em] text-sub mb-1.5">Function URL</p>
-          {functionURL ? (
-            <div className="flex flex-col gap-3">
-              <p className="text-[12px] break-all">{functionURL.url}</p>
-              <div className="flex flex-wrap gap-2">
-                <GhostBtn
-                  small
-                  onClick={() => {
-                    window.navigator.clipboard.writeText(functionURL.url).catch(() => undefined);
-                  }}
-                >
-                  Copy URL
-                </GhostBtn>
-                <GhostBtn
-                  small
-                  onClick={() => {
-                    window.open(functionURL.url, '_blank', 'noopener,noreferrer');
-                  }}
-                >
-                  Open URL
-                </GhostBtn>
-              </div>
+      {/* Function URL */}
+      <div className="border border-border bg-surface/40 p-4 sm:p-5 mb-8">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase tracking-[0.15em] text-cyan-primary mb-2">Function URL</p>
+            {functionURL ? (
+              <p className="text-sm text-white break-all">{functionURL.url}</p>
+            ) : (
+              <p className="text-sm text-sub">
+                {effectiveVersion?.state === 'ready'
+                  ? 'Generating function URL…'
+                  : 'Function URL will be created once the build is ready.'}
+              </p>
+            )}
+          </div>
+          {functionURL && (
+            <div className="flex flex-wrap gap-2 shrink-0">
+              <GhostBtn small onClick={() => { window.navigator.clipboard.writeText(functionURL.url).catch(() => undefined); }}>
+                Copy URL
+              </GhostBtn>
+              <GhostBtn small onClick={() => { window.open(functionURL.url, '_blank', 'noopener,noreferrer'); }}>
+                Open URL
+              </GhostBtn>
             </div>
-          ) : (
-            <p className="text-[11px] text-sub">
-              {effectiveVersion?.state === 'ready' ? 'Generating function URL…' : 'Function URL will be created once the build is ready.'}
-            </p>
           )}
         </div>
-
-        {latestLogs ? (
-          <div className="mt-4 pt-4 border-t border-border">
-            <div className="flex items-center gap-2 mb-3 text-sub text-[10px] uppercase tracking-[0.15em]">
-              <TerminalSquare size={12} />
-              <span>{logTitle}</span>
-            </div>
-            <pre className="max-h-[260px] overflow-auto bg-black/50 border border-border p-4 text-[11px] leading-5 text-neutral-200 whitespace-pre-wrap break-all">
-              {latestLogs}
-            </pre>
-          </div>
-        ) : (
-          <div className="mt-4 pt-4 border-t border-border text-[11px] text-sub">
-            Waiting for build or execution logs…
-          </div>
-        )}
-
-        {formattedOutput ? (
-          <div className="mt-4 pt-4 border-t border-border">
-            <div className="flex items-center gap-2 mb-3 text-sub text-[10px] uppercase tracking-[0.15em]">
-              <TerminalSquare size={12} />
-              <span>Function Output</span>
-            </div>
-            <pre className="max-h-[220px] overflow-auto bg-black/50 border border-border p-4 text-[11px] leading-5 text-neutral-200 whitespace-pre-wrap break-all">
-              {formattedOutput}
-            </pre>
-          </div>
-        ) : null}
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3 mt-2 w-full sm:w-auto">
-        <GhostBtn className="w-full sm:w-auto" onClick={onReset}>New Deployment</GhostBtn>
-        <CyanBtn className="w-full sm:w-auto" onClick={onViewDeployments}>View Deployments →</CyanBtn>
+      {/* Logs */}
+      {latestLogs ? (
+        <div className="border border-border mb-8">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-border text-sub text-[10px] uppercase tracking-[0.15em]">
+            <TerminalSquare size={12} />
+            <span>{logTitle}</span>
+          </div>
+          <pre className="overflow-auto max-h-72 p-4 text-[11px] leading-5 text-neutral-200 whitespace-pre-wrap break-all">
+            {latestLogs}
+          </pre>
+        </div>
+      ) : (
+        <div className="border border-border px-4 py-5 mb-8 text-[11px] text-sub">
+          Waiting for build or execution logs…
+        </div>
+      )}
+
+      {/* Function output */}
+      {formattedOutput && (
+        <div className="border border-border mb-8">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-border text-sub text-[10px] uppercase tracking-[0.15em]">
+            <TerminalSquare size={12} />
+            <span>Function Output</span>
+          </div>
+          <pre className="overflow-auto max-h-56 p-4 text-[11px] leading-5 text-neutral-200 whitespace-pre-wrap break-all">
+            {formattedOutput}
+          </pre>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <GhostBtn onClick={onReset}>New Deployment</GhostBtn>
+        <CyanBtn onClick={onViewDeployments}>View Deployments →</CyanBtn>
       </div>
     </motion.div>
   );
