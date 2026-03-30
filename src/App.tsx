@@ -12,26 +12,34 @@ import { DEPLOYS, PROJECTS } from './constants';
 import {
   ApiConnection,
   DeployRequestInput,
+  DeploymentSummary,
   LiveDeploymentRecord,
+  ProjectRecord,
   createFunctionVersion,
   getBuildJob,
   getBuildJobLogs,
+  getDeploymentLogs,
   getFunctionVersion,
   getJob,
   getJobLogs,
   getJobOutput,
   invokeFunction,
+  listDeployments,
+  listProjects,
   listRegions,
   sleep,
+  summaryToDeploymentRow,
   toDeploymentRow,
 } from './api';
+
+type ScreenName = 'projects' | 'deployments' | 'settings' | 'detail' | 'deploy';
 
 const CONNECTION_STORAGE_KEY = 'lecrev.ui.connection';
 const FALLBACK_REGIONS = ['ap-south-1', 'ap-south-2', 'ap-southeast-1'];
 const DEFAULT_CONNECTION: ApiConnection = {
-  baseUrl: '',
-  apiKey: 'dev-root-key',
-  projectId: 'demo',
+  baseUrl: (import.meta.env.VITE_LECREV_API_BASE_URL ?? '').trim(),
+  apiKey: (import.meta.env.VITE_LECREV_API_KEY ?? 'dev-root-key').trim() || 'dev-root-key',
+  projectId: (import.meta.env.VITE_LECREV_PROJECT_ID ?? 'demo').trim() || 'demo',
 };
 
 function loadConnection(): ApiConnection {
@@ -81,51 +89,108 @@ function toLogEntries(raw: string): LogEntry[] {
   }));
 }
 
+function slugify(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'project';
+}
+
+function buildProjectURL(name: string): string {
+  return `${slugify(name)}.lecrev.app`;
+}
+
+function buildProjectRow(projectID: string, projectName: string, deployments: Deployment[]): Project {
+  const latest = deployments[0];
+  const activeCount = deployments.filter((row) => row.status === 'Active').length;
+  const readyCount = deployments.filter((row) => row.status === 'Ready').length;
+
+  let instances = '0 Instances';
+  if (activeCount > 0) {
+    instances = `${activeCount} Instance${activeCount === 1 ? '' : 's'}`;
+  } else if (readyCount > 0) {
+    instances = `${readyCount} Warm`;
+  } else if (latest) {
+    instances = latest.status;
+  }
+
+  return {
+    id: projectID,
+    name: projectName,
+    url: buildProjectURL(projectName || projectID),
+    status: latest?.env ?? 'Production',
+    instances,
+    active: activeCount > 0 || readyCount > 0,
+  };
+}
+
 export default function App() {
-  const [screen, setScreen] = useState<"projects" | "deployments" | "settings" | "detail" | "deploy">("projects");
+  const [screen, setScreen] = useState<ScreenName>('projects');
   const [activeProj, setActiveProj] = useState<Project | null>(null);
-  const [activeTab, setActiveTab] = useState("deployments");
-  const [settingsTab, setSettingsTab] = useState("general");
+  const [activeTab, setActiveTab] = useState('deployments');
+  const [settingsTab, setSettingsTab] = useState('general');
   const [acctOpen, setAcctOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'signin' | 'register' | null>(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [connection, setConnection] = useState<ApiConnection>(() => loadConnection());
   const [availableRegions, setAvailableRegions] = useState<string[]>(FALLBACK_REGIONS);
   const [liveDeployments, setLiveDeployments] = useState<LiveDeploymentRecord[]>([]);
+  const [backendProjects, setBackendProjects] = useState<ProjectRecord[]>([]);
+  const [backendDeployments, setBackendDeployments] = useState<DeploymentSummary[]>([]);
+  const [deploymentLogCache, setDeploymentLogCache] = useState<Record<string, string>>({});
+  const [detailLogText, setDetailLogText] = useState<string | null>(null);
   const [integrationError, setIntegrationError] = useState<string | null>(null);
 
   useEffect(() => {
     window.localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(connection));
   }, [connection]);
 
+  const refreshCatalog = useCallback(async (conn: ApiConnection) => {
+    const [regionsResult, projectsResult, deploymentsResult] = await Promise.allSettled([
+      listRegions(conn),
+      listProjects(conn),
+      listDeployments(conn, { limit: 50 }),
+    ]);
+
+    let nextError: string | null = null;
+
+    if (regionsResult.status === 'fulfilled') {
+      setAvailableRegions(regionsResult.value.length > 0 ? regionsResult.value.map((row) => row.name) : FALLBACK_REGIONS);
+    } else {
+      setAvailableRegions(FALLBACK_REGIONS);
+      nextError = regionsResult.reason instanceof Error ? regionsResult.reason.message : 'Unable to load region catalog.';
+    }
+
+    if (projectsResult.status === 'fulfilled') {
+      setBackendProjects(projectsResult.value);
+    } else {
+      setBackendProjects([]);
+      nextError ??= projectsResult.reason instanceof Error ? projectsResult.reason.message : 'Unable to load projects.';
+    }
+
+    if (deploymentsResult.status === 'fulfilled') {
+      setBackendDeployments(deploymentsResult.value);
+    } else {
+      setBackendDeployments([]);
+      nextError ??= deploymentsResult.reason instanceof Error ? deploymentsResult.reason.message : 'Unable to load deployments.';
+    }
+
+    setIntegrationError(nextError);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-    const refreshRegions = async () => {
-      try {
-        const rows = await listRegions(connection);
-        if (cancelled) {
-          return;
-        }
-        if (rows.length > 0) {
-          setAvailableRegions(rows.map((row) => row.name));
-        } else {
-          setAvailableRegions(FALLBACK_REGIONS);
-        }
-        setIntegrationError(null);
-      } catch (err) {
-        if (cancelled) {
-          return;
-        }
-        setAvailableRegions(FALLBACK_REGIONS);
-        setIntegrationError(err instanceof Error ? err.message : 'Unable to load region catalog.');
+    void (async () => {
+      await refreshCatalog(connection);
+      if (cancelled) {
+        return;
       }
-    };
-
-    void refreshRegions();
+    })();
     return () => {
       cancelled = true;
     };
-  }, [connection.baseUrl, connection.apiKey]);
+  }, [connection.baseUrl, connection.apiKey, refreshCatalog]);
 
   const patchLiveDeployment = useCallback((versionId: string, updater: (record: LiveDeploymentRecord) => LiveDeploymentRecord) => {
     setLiveDeployments((prev) =>
@@ -163,8 +228,31 @@ export default function App() {
         ...record,
         error: err instanceof Error ? err.message : 'Execution polling failed.',
       }));
+    } finally {
+      await refreshCatalog(conn);
     }
-  }, [patchLiveDeployment]);
+  }, [patchLiveDeployment, refreshCatalog]);
+
+  const startExecution = useCallback(async (conn: ApiConnection, versionId: string) => {
+    try {
+      const job = await invokeFunction(conn, versionId, {
+        source: 'lecrev_frontend',
+        mode: 'wireframe',
+        submittedAt: new Date().toISOString(),
+      });
+      patchLiveDeployment(versionId, (record) => ({
+        ...record,
+        job,
+      }));
+      await trackExecutionLifecycle(conn, versionId, job.id);
+    } catch (err) {
+      patchLiveDeployment(versionId, (record) => ({
+        ...record,
+        error: err instanceof Error ? err.message : 'Execution submission failed.',
+      }));
+      await refreshCatalog(conn);
+    }
+  }, [patchLiveDeployment, refreshCatalog, trackExecutionLifecycle]);
 
   const trackBuildLifecycle = useCallback(async (conn: ApiConnection, versionId: string, buildJobId: string) => {
     let lastBuildState: LiveDeploymentRecord['buildJob'];
@@ -208,23 +296,16 @@ export default function App() {
         return;
       }
 
-      const job = await invokeFunction(conn, versionId, {
-        source: 'lecrev_frontend',
-        mode: 'wireframe',
-        submittedAt: new Date().toISOString(),
-      });
-      patchLiveDeployment(versionId, (record) => ({
-        ...record,
-        job,
-      }));
-      await trackExecutionLifecycle(conn, versionId, job.id);
+      await startExecution(conn, versionId);
     } catch (err) {
       patchLiveDeployment(versionId, (record) => ({
         ...record,
         error: err instanceof Error ? err.message : 'Build polling failed.',
       }));
+    } finally {
+      await refreshCatalog(conn);
     }
-  }, [patchLiveDeployment, trackExecutionLifecycle]);
+  }, [patchLiveDeployment, refreshCatalog, startExecution]);
 
   const handleDeploy = useCallback(async (request: DeployRequestInput) => {
     try {
@@ -241,8 +322,12 @@ export default function App() {
         ...prev.filter((record) => record.version.id !== version.id),
       ]);
 
+      await refreshCatalog(conn);
+
       if (version.buildJobId) {
         void trackBuildLifecycle(conn, version.id, version.buildJobId);
+      } else if (version.state === 'ready') {
+        void startExecution(conn, version.id);
       }
 
       return {
@@ -254,74 +339,192 @@ export default function App() {
       setIntegrationError(message);
       throw err;
     }
-  }, [connection, trackBuildLifecycle]);
+  }, [connection, refreshCatalog, startExecution, trackBuildLifecycle]);
 
   const deploymentRows = useMemo<Deployment[]>(() => {
     const map = new Map<string, Deployment>();
-    for (const row of liveDeployments.map(toDeploymentRow)) {
+    const order: string[] = [];
+
+    for (const summary of backendDeployments) {
+      const row = summaryToDeploymentRow(summary);
+      order.push(row.id);
       map.set(row.id, row);
     }
+
+    for (const record of liveDeployments) {
+      const row = toDeploymentRow(record);
+      if (!map.has(row.id)) {
+        order.unshift(row.id);
+      }
+      map.set(row.id, row);
+    }
+
     for (const row of DEPLOYS) {
       if (!map.has(row.id)) {
+        order.push(row.id);
         map.set(row.id, row);
       }
     }
-    return Array.from(map.values());
-  }, [liveDeployments]);
+
+    return order
+      .map((id) => map.get(id))
+      .filter((row): row is Deployment => Boolean(row));
+  }, [backendDeployments, liveDeployments]);
+
+  const deploymentIDsByProject = useMemo(() => {
+    const map = new Map<string, string[]>();
+
+    for (const summary of backendDeployments) {
+      const current = map.get(summary.projectId) ?? [];
+      current.push(summary.id);
+      map.set(summary.projectId, current);
+    }
+
+    for (const record of liveDeployments) {
+      const current = map.get(record.projectId) ?? [];
+      if (!current.includes(record.version.id)) {
+        current.unshift(record.version.id);
+      }
+      map.set(record.projectId, current);
+    }
+
+    return map;
+  }, [backendDeployments, liveDeployments]);
 
   const projectRows = useMemo<Project[]>(() => {
+    const deploymentsByProject = new Map<string, Deployment[]>();
+    const projectNames = new Map<string, string>();
+
+    for (const summary of backendDeployments) {
+      const current = deploymentsByProject.get(summary.projectId) ?? [];
+      current.push(summaryToDeploymentRow(summary));
+      deploymentsByProject.set(summary.projectId, current);
+      projectNames.set(summary.projectId, summary.projectName || summary.projectId);
+    }
+
+    for (const record of liveDeployments) {
+      const current = deploymentsByProject.get(record.projectId) ?? [];
+      current.unshift(toDeploymentRow(record));
+      deploymentsByProject.set(record.projectId, current);
+      if (!projectNames.has(record.projectId)) {
+        projectNames.set(record.projectId, record.projectId);
+      }
+    }
+
     const map = new Map<string, Project>();
+
+    for (const project of backendProjects) {
+      map.set(
+        project.id,
+        buildProjectRow(
+          project.id,
+          project.name || projectNames.get(project.id) || project.id,
+          deploymentsByProject.get(project.id) ?? [],
+        ),
+      );
+    }
+
+    for (const [projectID, rows] of deploymentsByProject.entries()) {
+      if (!map.has(projectID)) {
+        map.set(projectID, buildProjectRow(projectID, projectNames.get(projectID) || projectID, rows));
+      }
+    }
+
     for (const project of PROJECTS) {
-      map.set(project.name, project);
+      if (!map.has(project.id)) {
+        map.set(project.id, project);
+      }
     }
-    for (const row of liveDeployments.map(toDeploymentRow)) {
-      const slug = row.project
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '');
-      const active = row.status === 'Active' || row.status === 'Ready';
-      map.set(row.project, {
-        name: row.project,
-        url: `${slug || 'project'}.lecrev.app`,
-        status: row.env,
-        instances: active ? '1 Instance' : row.status,
-        active,
-      });
-    }
+
     return Array.from(map.values());
-  }, [liveDeployments]);
+  }, [backendDeployments, backendProjects, liveDeployments]);
+
+  useEffect(() => {
+    if (!activeProj) {
+      return;
+    }
+    const next = projectRows.find((project) => project.id === activeProj.id);
+    if (!next) {
+      setActiveProj(null);
+      return;
+    }
+    if (
+      next.name !== activeProj.name ||
+      next.url !== activeProj.url ||
+      next.status !== activeProj.status ||
+      next.instances !== activeProj.instances ||
+      next.active !== activeProj.active
+    ) {
+      setActiveProj(next);
+    }
+  }, [activeProj, projectRows]);
 
   const detailDeployments = useMemo<Deployment[]>(() => {
     if (!activeProj) {
       return deploymentRows.slice(0, 4);
     }
-    const rows = deploymentRows.filter((row) => row.project === activeProj.name);
+    const targetIDs = new Set(deploymentIDsByProject.get(activeProj.id) ?? []);
+    const rows = deploymentRows.filter((row) => targetIDs.has(row.id));
     return rows.length > 0 ? rows : deploymentRows.slice(0, 4);
-  }, [activeProj, deploymentRows]);
+  }, [activeProj, deploymentIDsByProject, deploymentRows]);
+
+  const activeDetailDeploymentID = detailDeployments[0]?.id;
+
+  useEffect(() => {
+    if (activeTab !== 'logs' || !activeDetailDeploymentID) {
+      setDetailLogText(null);
+      return;
+    }
+
+    const liveRecord = liveDeployments.find((record) => record.version.id === activeDetailDeploymentID);
+    const fallbackRaw = liveRecord?.jobLogs || liveRecord?.buildLogs || liveRecord?.error || null;
+    const cached = deploymentLogCache[activeDetailDeploymentID];
+
+    if (cached) {
+      setDetailLogText(cached);
+      return;
+    }
+
+    setDetailLogText(fallbackRaw);
+
+    let cancelled = false;
+    void getDeploymentLogs(connection, activeDetailDeploymentID)
+      .then((raw) => {
+        if (cancelled) {
+          return;
+        }
+        setDeploymentLogCache((prev) => ({
+          ...prev,
+          [activeDetailDeploymentID]: raw,
+        }));
+        setDetailLogText(raw);
+      })
+      .catch(() => {
+        if (!cancelled && !fallbackRaw) {
+          setDetailLogText(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeDetailDeploymentID, activeTab, connection, deploymentLogCache, liveDeployments]);
 
   const detailLogs = useMemo<LogEntry[] | undefined>(() => {
-    if (!activeProj) {
+    if (!detailLogText) {
       return undefined;
     }
-    const record = liveDeployments.find((entry) => entry.projectId === activeProj.name);
-    if (!record) {
-      return undefined;
-    }
-    const raw = record.jobLogs || record.buildLogs || record.error;
-    if (!raw) {
-      return undefined;
-    }
-    const parsed = toLogEntries(raw);
+    const parsed = toLogEntries(detailLogText);
     return parsed.length > 0 ? parsed : undefined;
-  }, [activeProj, liveDeployments]);
+  }, [detailLogText]);
 
   const saveConnection = useCallback((next: ApiConnection) => {
     setConnection(next);
     setIntegrationError(null);
   }, []);
 
-  const go = (s: typeof screen) => {
-    setScreen(s);
+  const go = (nextScreen: ScreenName) => {
+    setScreen(nextScreen);
     setAcctOpen(false);
   };
 
@@ -329,16 +532,15 @@ export default function App() {
     <div className="flex h-screen bg-bg text-white overflow-hidden font-sans">
       <AnimatePresence>
         {authMode && (
-          <AuthScreen 
-            initialMode={authMode} 
-            onSuccess={() => setAuthMode(null)} 
-            onBack={() => setAuthMode(null)} 
+          <AuthScreen
+            initialMode={authMode}
+            onSuccess={() => setAuthMode(null)}
+            onBack={() => setAuthMode(null)}
           />
         )}
       </AnimatePresence>
 
-      {/* Sidebar */}
-      <motion.aside 
+      <motion.aside
         animate={{ width: sidebarExpanded ? 240 : 64 }}
         className="border-r border-border flex flex-col py-6 shrink-0 bg-surface/50 backdrop-blur-xl"
       >
@@ -350,7 +552,7 @@ export default function App() {
           </div>
           <AnimatePresence>
             {sidebarExpanded && (
-              <motion.span 
+              <motion.span
                 key="logo-text"
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
@@ -364,16 +566,16 @@ export default function App() {
         </div>
 
         <div className="flex-1 flex flex-col gap-2 px-3">
-          <SideItem 
-            active={screen === "projects" || screen === "detail"} 
-            onClick={() => go("projects")}
+          <SideItem
+            active={screen === 'projects' || screen === 'detail'}
+            onClick={() => go('projects')}
             expanded={sidebarExpanded}
             label="Projects"
             icon={<LayoutGrid size={20} strokeWidth={1.5} />}
           />
-          <SideItem 
-            active={screen === "deployments"} 
-            onClick={() => go("deployments")}
+          <SideItem
+            active={screen === 'deployments'}
+            onClick={() => go('deployments')}
             expanded={sidebarExpanded}
             label="Deployments"
             icon={<List size={20} strokeWidth={1.5} />}
@@ -381,32 +583,30 @@ export default function App() {
         </div>
 
         <div className="mt-auto flex flex-col gap-2 px-3">
-          <SideItem 
-            active={screen === "settings"} 
-            onClick={() => go("settings")}
+          <SideItem
+            active={screen === 'settings'}
+            onClick={() => go('settings')}
             expanded={sidebarExpanded}
             label="Settings"
             icon={<Settings size={20} strokeWidth={1.5} />}
           />
-          <button 
+          <button
             onClick={() => setSidebarExpanded(!sidebarExpanded)}
             className="flex items-center gap-3 p-3 rounded-lg hover:bg-white/5 transition-colors text-muted hover:text-white"
           >
-            <ChevronDown size={20} className={sidebarExpanded ? "rotate-90" : "-rotate-90"} />
+            <ChevronDown size={20} className={sidebarExpanded ? 'rotate-90' : '-rotate-90'} />
             {sidebarExpanded && <span className="text-sm font-medium">Collapse</span>}
           </button>
         </div>
       </motion.aside>
 
-      {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
         <header className="h-16 border-b border-border flex items-center justify-between px-8 shrink-0">
           <div className="flex items-center gap-4">
             <AnimatePresence mode="wait">
-              {screen === "detail" && activeProj && (
-                <motion.div 
-                  initial={{ opacity: 0, x: -10 }} 
+              {screen === 'detail' && activeProj && (
+                <motion.div
+                  initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   className="flex items-center gap-2 text-sub text-sm"
                 >
@@ -447,33 +647,32 @@ export default function App() {
               </AnimatePresence>
             </div>
 
-            <CyanBtn onClick={() => go("deploy")}>Deploy</CyanBtn>
+            <CyanBtn onClick={() => go('deploy')}>Deploy</CyanBtn>
           </div>
         </header>
 
-        {/* Screen Area */}
         <main className="flex-1 overflow-hidden relative flex flex-col">
           <AnimatePresence mode="wait">
-            {screen === "projects" && (
+            {screen === 'projects' && (
               <ProjectsScreen
                 key="projects"
-                onViewProject={p => { setActiveProj(p); go("detail"); }}
+                onViewProject={(project) => { setActiveProj(project); go('detail'); }}
                 projects={projectRows}
               />
             )}
-            {screen === "deployments" && <DeploymentsScreen key="deployments" deployments={deploymentRows} />}
-            {screen === "detail" && (
+            {screen === 'deployments' && <DeploymentsScreen key="deployments" deployments={deploymentRows} />}
+            {screen === 'detail' && (
               <DetailScreen
                 key="detail"
                 project={activeProj}
-                onBack={() => go("projects")}
+                onBack={() => go('projects')}
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
                 deployments={detailDeployments}
                 logs={detailLogs}
               />
             )}
-            {screen === "settings" && (
+            {screen === 'settings' && (
               <SettingsScreen
                 key="settings"
                 settingsTab={settingsTab}
@@ -483,10 +682,10 @@ export default function App() {
                 availableRegions={availableRegions}
               />
             )}
-            {screen === "deploy" && (
+            {screen === 'deploy' && (
               <DeployPage
                 key="deploy"
-                onBack={() => go("deployments")}
+                onBack={() => go('deployments')}
                 onDeploy={handleDeploy}
                 defaultProjectId={connection.projectId}
                 regionOptions={availableRegions}
@@ -495,7 +694,6 @@ export default function App() {
           </AnimatePresence>
         </main>
 
-        {/* Footer */}
         <footer className="h-8 border-t border-border px-4 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-6 text-[9px] uppercase tracking-[0.15em] text-muted">
             <div className="flex items-center gap-1.5">
@@ -527,8 +725,8 @@ function SideItem({ active, onClick, expanded, label, icon }: { active: boolean;
     >
       <div className="shrink-0">{icon}</div>
       {expanded && (
-        <motion.span 
-          initial={{ opacity: 0, x: -10 }} 
+        <motion.span
+          initial={{ opacity: 0, x: -10 }}
           animate={{ opacity: 1, x: 0 }}
           className="text-sm font-medium"
         >
@@ -539,27 +737,9 @@ function SideItem({ active, onClick, expanded, label, icon }: { active: boolean;
   );
 }
 
-function NavTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`text-[10px] uppercase tracking-[0.12em] bg-transparent border-none pb-1 cursor-pointer transition-colors duration-150 relative ${active ? 'text-white' : 'text-sub hover:text-white'}`}
-    >
-      {children}
-      {active && (
-        <motion.div
-          layoutId="headerNavTab"
-          className="absolute bottom-0 left-0 right-0 h-[1px] bg-cyan-primary"
-          transition={{ type: "spring", stiffness: 400, damping: 35 }}
-        />
-      )}
-    </button>
-  );
-}
-
 function SplitAuthBtn({ children, onClick }: { children: React.ReactNode; onClick?: () => void }) {
   return (
-    <button 
+    <button
       onClick={onClick}
       className="text-[10px] uppercase tracking-[0.12em] px-4 py-1.5 cursor-pointer transition-all duration-150 bg-transparent border-none text-sub hover:bg-surface hover:text-white"
     >
@@ -568,21 +748,25 @@ function SplitAuthBtn({ children, onClick }: { children: React.ReactNode; onClic
   );
 }
 
-function AccountDropdown({ onClose, onNavigate }: { onClose: () => void; onNavigate: (s: any) => void }) {
+function AccountDropdown({ onClose, onNavigate }: { onClose: () => void; onNavigate: (screen: ScreenName) => void }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    const handler = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, [onClose]);
 
   const items = [
-    { label: "Profile", icon: "◉", action: onClose },
-    { label: "Team", icon: "◎", action: () => { onNavigate("settings"); onClose(); } },
-    { label: "API Keys", icon: "◇", action: () => { onNavigate("settings"); onClose(); } },
-    { label: "Settings", icon: "◆", action: () => { onNavigate("settings"); onClose(); } },
+    { label: 'Profile', icon: '◉', action: onClose },
+    { label: 'Team', icon: '◎', action: () => { onNavigate('settings'); onClose(); } },
+    { label: 'API Keys', icon: '◇', action: () => { onNavigate('settings'); onClose(); } },
+    { label: 'Settings', icon: '◆', action: () => { onNavigate('settings'); onClose(); } },
     { divider: true },
-    { label: "Sign Out", icon: "→", action: onClose, danger: true },
+    { label: 'Sign Out', icon: '→', action: onClose, danger: true },
   ];
 
   return (
@@ -598,8 +782,10 @@ function AccountDropdown({ onClose, onNavigate }: { onClose: () => void; onNavig
         <p className="text-[10px] text-sub">alex@lecrev.sh</p>
       </div>
       <div className="py-1">
-        {items.map((item, i) => {
-          if ('divider' in item) return <div key={i} className="h-[1px] bg-border my-1" />;
+        {items.map((item, index) => {
+          if ('divider' in item) {
+            return <div key={index} className="h-[1px] bg-border my-1" />;
+          }
           return (
             <button
               key={item.label}
