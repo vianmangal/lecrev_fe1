@@ -120,6 +120,15 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
 
             <div className="mx-auto mt-8 w-full max-w-5xl px-4 sm:mt-12 sm:px-6 lg:px-8">
               <div className="relative aspect-video overflow-hidden rounded-2xl border border-border-md bg-surface shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_30px_80px_rgba(0,0,0,0.55)]">
+                <video
+                  className="absolute inset-0 h-full w-full object-cover"
+                  src="/landing-demo.mp4"
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  preload="metadata"
+                />
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(255,255,255,0.08),transparent_55%)]" />
                 <div className="absolute left-4 top-4 flex gap-2 opacity-70">
                   <span className="h-2 w-2 rounded-full bg-red-400" />
