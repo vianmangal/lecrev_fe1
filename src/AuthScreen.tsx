@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TextInput, CyanBtn, GhostBtn } from './components/UI';
-import { Shield, ArrowRight, Github, Mail } from 'lucide-react';
+import { ArrowRight, Github, Mail } from 'lucide-react';
 
 interface AuthScreenProps {
   initialMode?: 'signin' | 'register';
@@ -13,6 +13,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signin', 
   const [mode, setMode] = useState<'signin' | 'register'>(initialMode);
   const [isLoading, setIsLoading] = useState(false);
 
+  const openProviderLogin = (provider: 'github' | 'google') => {
+    const url = provider === 'github' ? 'https://github.com/login' : 'https://accounts.google.com/';
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -23,7 +28,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signin', 
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center p-6 overflow-hidden">
+    <div className="fixed inset-0 z-[200] bg-black flex items-start sm:items-center justify-center p-4 sm:p-6 overflow-y-auto">
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none opacity-20">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-cyan-primary/10 blur-[120px]" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-cyan-primary/5 blur-[120px]" />
@@ -33,7 +38,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signin', 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="w-full max-w-[420px] relative z-10"
+        className="w-full max-w-[420px] relative z-10 py-6 sm:py-0"
       >
         <div className="flex flex-col items-center mb-10">
           <div className="flex items-center gap-3 mb-3">
@@ -42,12 +47,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signin', 
                 <path d="M2 4L12 21L22 4H2Z" fill="currentColor" />
               </svg>
             </div>
-            <h1 className="text-3xl tracking-tighter font-black uppercase">LECREV</h1>
+            <h1 className="text-2xl sm:text-3xl tracking-tighter font-black uppercase">LECREV</h1>
           </div>
           <p className="text-[10px] uppercase tracking-[0.2em] text-sub">Secure Infrastructure Access</p>
         </div>
 
-        <div className="bg-surface border border-border p-8 shadow-2xl relative">
+        <div className="bg-surface border border-border p-5 sm:p-8 shadow-2xl relative">
           <AnimatePresence mode="wait">
             <motion.div
               key={mode}
@@ -101,12 +106,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signin', 
                 <p className="text-[10px] uppercase tracking-[0.15em] text-muted text-center mb-6">
                   Or continue with
                 </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <GhostBtn className="flex items-center justify-center gap-2 py-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <GhostBtn onClick={() => openProviderLogin('github')} className="flex items-center justify-center gap-2 py-2.5">
                     <Github size={14} />
                     Github
                   </GhostBtn>
-                  <GhostBtn className="flex items-center justify-center gap-2 py-2.5">
+                  <GhostBtn onClick={() => openProviderLogin('google')} className="flex items-center justify-center gap-2 py-2.5">
                     <Mail size={14} />
                     Google
                   </GhostBtn>
@@ -135,7 +140,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signin', 
         </div>
       </motion.div>
 
-      <div className="absolute bottom-6 left-6 right-6 flex justify-between text-[9px] uppercase tracking-[0.2em] text-muted pointer-events-none">
+      <div className="hidden sm:flex absolute bottom-6 left-6 right-6 justify-between text-[9px] uppercase tracking-[0.2em] text-muted pointer-events-none">
         <span>Auth_Protocol: TLS_1.3</span>
         <span>Status: Ready</span>
       </div>

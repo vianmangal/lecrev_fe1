@@ -147,6 +147,17 @@ export interface ExecutionJobSummary {
   updatedAt: string;
 }
 
+export interface HTTPTrigger {
+  token: string;
+  projectId: string;
+  functionVersionId: string;
+  description?: string;
+  authMode: 'none';
+  enabled: boolean;
+  url: string;
+  createdAt: string;
+}
+
 export interface DeploymentSummary {
   id: string;
   projectId: string;
@@ -196,6 +207,12 @@ export interface LiveDeploymentRecord {
   jobLogs?: string;
   jobOutput?: unknown;
   error?: string;
+}
+
+export interface CreateHTTPTriggerRequest {
+  description?: string;
+  token?: string;
+  authMode?: 'none';
 }
 
 function normalizeBaseURL(baseUrl: string): string {
@@ -423,6 +440,18 @@ export async function getJobLogs(connection: ApiConnection, jobId: string): Prom
 
 export async function getJobOutput(connection: ApiConnection, jobId: string): Promise<unknown> {
   return request<unknown>(connection, 'GET', `/v1/jobs/${jobId}/output`);
+}
+
+export async function listHTTPTriggers(connection: ApiConnection, versionId: string): Promise<HTTPTrigger[]> {
+  return request<HTTPTrigger[]>(connection, 'GET', `/v1/functions/${versionId}/triggers/http`);
+}
+
+export async function createHTTPTrigger(
+  connection: ApiConnection,
+  versionId: string,
+  body: CreateHTTPTriggerRequest = {},
+): Promise<HTTPTrigger> {
+  return request<HTTPTrigger>(connection, 'POST', `/v1/functions/${versionId}/triggers/http`, body);
 }
 
 export async function createFunctionVersion(connection: ApiConnection, input: DeployRequestInput): Promise<FunctionVersion> {
