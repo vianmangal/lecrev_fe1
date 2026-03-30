@@ -83,10 +83,13 @@ export default function App() {
   }, [activeProj, deploymentIDsByProject, deploymentRows]);
 
   const activeDetailDeploymentID = detailDeployments[0]?.id;
+  const functionURLDeploymentID = detailDeployments.find((deployment) => (
+    deployment.status === 'Active' || deployment.status === 'Ready'
+  ))?.id ?? activeDetailDeploymentID;
   const detailLogs = useDetailLogs(connection, activeTab, activeDetailDeploymentID, liveDeployments);
 
   useEffect(() => {
-    if (!activeDetailDeploymentID) {
+    if (!functionURLDeploymentID) {
       setDetailFunctionURLs([]);
       setFunctionURLError(null);
       return;
@@ -96,7 +99,7 @@ export default function App() {
     setFunctionURLBusy(true);
     setFunctionURLError(null);
 
-    void loadFunctionURLs(connection, activeDetailDeploymentID)
+    void loadFunctionURLs(connection, functionURLDeploymentID)
       .then((urls) => {
         if (!cancelled) {
           setDetailFunctionURLs(urls);
@@ -117,18 +120,18 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [activeDetailDeploymentID, connection, loadFunctionURLs]);
+  }, [connection, functionURLDeploymentID, loadFunctionURLs]);
 
   const handleCreateFunctionURL = async () => {
-    if (!activeDetailDeploymentID) {
+    if (!functionURLDeploymentID) {
       return;
     }
     setFunctionURLBusy(true);
     setFunctionURLError(null);
     try {
-      const created = await ensureFunctionURL(connection, activeDetailDeploymentID);
+      const created = await ensureFunctionURL(connection, functionURLDeploymentID);
       if (created) {
-        const urls = await loadFunctionURLs(connection, activeDetailDeploymentID);
+        const urls = await loadFunctionURLs(connection, functionURLDeploymentID);
         setDetailFunctionURLs(urls);
       }
     } catch (err) {

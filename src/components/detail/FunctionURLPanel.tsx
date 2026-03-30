@@ -19,14 +19,14 @@ export function FunctionURLPanel({ latestFunctionURL, busy = false, error = null
             <>
               <p className="text-sm text-white break-all">{latestFunctionURL.url}</p>
               <p className="text-[10px] uppercase tracking-[0.12em] text-sub mt-2">
-                Public HTTP entrypoint for the latest deployment
+                Public HTTP entrypoint for the latest ready deployment
               </p>
             </>
           ) : (
             <>
               <p className="text-sm text-white">No public URL generated yet.</p>
               <p className="text-[10px] uppercase tracking-[0.12em] text-sub mt-2">
-                Create one to invoke this function over HTTP like a Lambda Function URL
+                Create one to invoke the latest ready deployment over HTTP like a Lambda Function URL
               </p>
             </>
           )}
