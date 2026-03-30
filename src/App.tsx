@@ -529,7 +529,11 @@ export default function App() {
         animate={{ width: sidebarExpanded ? 240 : 64 }}
         className="border-r border-border hidden md:flex flex-col py-6 shrink-0 bg-surface/50 backdrop-blur-xl"
       >
-        <div className={`px-4 mb-10 flex items-center ${sidebarExpanded ? 'gap-3' : 'justify-center'}`}>
+        <button
+          onClick={() => go('projects')}
+          className={`px-4 mb-10 flex items-center ${sidebarExpanded ? 'gap-3' : 'justify-center'} bg-transparent border-none text-left cursor-pointer text-white`}
+          aria-label="Go to home"
+        >
           <div className="text-white shrink-0">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M2 4L12 21L22 4H2Z" fill="currentColor" />
@@ -548,7 +552,7 @@ export default function App() {
               </motion.span>
             )}
           </AnimatePresence>
-        </div>
+        </button>
 
         <div className="flex-1 flex flex-col gap-2 px-3">
           <SideItem
@@ -602,7 +606,13 @@ export default function App() {
                   >
                     ←
                   </button>
-                  <span className="opacity-50">Projects</span>
+                  <button
+                    onClick={() => go('projects')}
+                    className="opacity-50 hover:opacity-100 text-sub hover:text-white transition-colors bg-transparent border-none cursor-pointer p-0"
+                    aria-label="Go to Projects home"
+                  >
+                    Projects
+                  </button>
                   <span className="opacity-30">/</span>
                   <span className="text-white font-medium">{activeProj.name}</span>
                 </motion.div>
