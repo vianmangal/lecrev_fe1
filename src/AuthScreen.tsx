@@ -1,32 +1,69 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { TextInput, CyanBtn, GhostBtn } from './components/UI';
-import { Shield, ArrowRight, Github, Mail } from 'lucide-react';
+import { ArrowRight, Github, Shield } from 'lucide-react';
+import { CyanBtn } from './components/UI';
+import { authClient } from './lib/auth-client';
 
 interface AuthScreenProps {
   initialMode?: 'signin' | 'register';
   onSuccess: () => void;
   onBack: () => void;
+  required?: boolean;
+  githubConfigured?: boolean;
 }
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signin', onSuccess, onBack }) => {
+function toErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return 'GitHub sign-in failed. Check your Better Auth and GitHub OAuth settings.';
+}
+
+export const AuthScreen: React.FC<AuthScreenProps> = ({
+  initialMode = 'signin',
+  onSuccess,
+  onBack,
+  required = false,
+  githubConfigured = true,
+}) => {
   const [mode, setMode] = useState<'signin' | 'register'>(initialMode);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleGithubAuth = async () => {
+    if (!githubConfigured) {
+      setError('GitHub OAuth is not configured yet. Add GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET to .env.local, then restart npm run dev.');
+      return;
+    }
+
     setIsLoading(true);
-    // Simulate auth delay
-    setTimeout(() => {
+    setError(null);
+
+    try {
+      const callbackURL = window.location.origin;
+      const response = await authClient.signIn.social({
+        provider: 'github',
+        callbackURL,
+        errorCallbackURL: callbackURL,
+        disableRedirect: true,
+      });
+
+      if (response.data?.url) {
+        window.location.href = response.data.url;
+        return;
+      }
+
       setIsLoading(false);
       onSuccess();
-    }, 1500);
+    } catch (err) {
+      setIsLoading(false);
+      setError(toErrorMessage(err));
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center p-6 overflow-hidden">
-      {/* Background Accents */}
-      <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none opacity-20">
+    <div className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center p-6 overflow-hidden">
+      <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none opacity-30">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-cyan-primary/10 blur-[120px]" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-cyan-primary/5 blur-[120px]" />
       </div>
@@ -35,7 +72,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signin', 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="w-full max-w-[420px] relative z-10"
+        className="w-full max-w-[440px] relative z-10"
       >
         <div className="flex flex-col items-center mb-10">
           <div className="flex items-center gap-3 mb-3">
@@ -46,7 +83,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signin', 
             </div>
             <h1 className="text-3xl tracking-tighter font-black uppercase">LECREV</h1>
           </div>
-          <p className="text-[10px] uppercase tracking-[0.2em] text-sub">Secure Infrastructure Access</p>
+          <p className="text-[10px] uppercase tracking-[0.2em] text-sub">
+            Better Auth + GitHub OAuth
+          </p>
         </div>
 
         <div className="bg-surface border border-border p-8 shadow-2xl relative">
@@ -58,89 +97,96 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signin', 
               exit={{ opacity: 0, x: mode === 'signin' ? 10 : -10 }}
               transition={{ duration: 0.2 }}
             >
-              {mode === 'register' && (
-                <button
-                  onClick={() => setMode('signin')}
-                  className="text-[10px] uppercase tracking-[0.15em] text-sub hover:text-white transition-colors bg-transparent border-none cursor-pointer mb-5 p-0"
+              <div className="flex items-start gap-4 mb-8">
+                <div className="w-10 h-10 rounded-full border border-border flex items-center justify-center text-cyan-primary shrink-0">
+                  <Shield size={18} />
+                </div>
+                <div>
+                  <h2 className="text-lg uppercase tracking-tight mb-2">
+                    {mode === 'signin' ? 'Sign In With GitHub' : 'Create Your Access Account'}
+                  </h2>
+                  <p className="text-[11px] leading-5 text-sub">
+                    {mode === 'signin'
+                      ? 'Access the dashboard through GitHub instead of the old mock auth flow.'
+                      : 'New accounts are provisioned through GitHub OAuth and stored by Better Auth.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="border border-border bg-black/20 p-5">
+                <div className="flex items-center gap-3 mb-4">
+                  <Github size={18} />
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.15em]">GitHub Provider</p>
+                    <p className="text-[10px] text-sub mt-1">
+                      Redirects to GitHub, then returns to this dashboard with a session cookie.
+                    </p>
+                  </div>
+                </div>
+
+                <CyanBtn
+                  className="w-full py-3"
+                  disabled={isLoading || !githubConfigured}
+                  onClick={() => {
+                    void handleGithubAuth();
+                  }}
                 >
-                  ← Back to Sign In
-                </button>
-              )}
+                  <span className="flex items-center justify-center gap-2">
+                    {isLoading
+                      ? 'Redirecting to GitHub...'
+                      : !githubConfigured
+                        ? 'GitHub Auth Not Configured'
+                        : mode === 'signin'
+                          ? 'Continue with GitHub'
+                          : 'Create with GitHub'}
+                    {!isLoading && <ArrowRight size={14} />}
+                  </span>
+                </CyanBtn>
 
-              <h2 className="text-lg uppercase tracking-tight mb-8">
-                {mode === 'signin' ? 'Sign In' : 'Create Account'}
-              </h2>
-
-              <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-                {mode === 'register' && (
-                  <TextInput label="Full Name" placeholder="Alex Chen" />
-                )}
-                <TextInput label="Email Address" placeholder="alex@lecrev.sh" />
-                <TextInput label="Password" placeholder="••••••••" />
-                
-                {mode === 'register' && (
-                  <TextInput label="Confirm Password" placeholder="••••••••" />
-                )}
-
-                <div className="mt-4">
-                  <CyanBtn className="w-full py-3">
-                    {isLoading ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <div className="w-3 h-3 border-2 border-black/20 border-t-black rounded-full animate-spin" />
-                        Processing...
-                      </span>
-                    ) : (
-                      <span className="flex items-center justify-center gap-2">
-                        {mode === 'signin' ? 'Access Dashboard' : 'Initialize Account'}
-                        <ArrowRight size={14} />
-                      </span>
-                    )}
-                  </CyanBtn>
-                </div>
-              </form>
-
-              <div className="mt-8 pt-8 border-t border-border">
-                <p className="text-[10px] uppercase tracking-[0.15em] text-muted text-center mb-6">
-                  Or continue with
+                <p className="text-[10px] uppercase tracking-[0.15em] text-muted text-center mt-4">
+                  Callback URL: `/api/auth/callback/github`
                 </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <GhostBtn className="flex items-center justify-center gap-2 py-2.5">
-                    <Github size={14} />
-                    Github
-                  </GhostBtn>
-                  <GhostBtn className="flex items-center justify-center gap-2 py-2.5">
-                    <Mail size={14} />
-                    Google
-                  </GhostBtn>
-                </div>
+
+                {!githubConfigured && (
+                  <div className="mt-4 border border-amber-500/30 bg-amber-500/8 p-3 text-[10px] leading-5 text-amber-200">
+                    Add `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, and `BETTER_AUTH_SECRET` to `.env.local`, then restart `npm run dev`.
+                  </div>
+                )}
+
+                {error && (
+                  <p className="text-[10px] leading-5 text-red-400 mt-4">
+                    {error}
+                  </p>
+                )}
               </div>
             </motion.div>
           </AnimatePresence>
         </div>
 
         <div className="mt-8 flex flex-col items-center gap-4">
-          <button 
+          <button
             onClick={() => setMode(mode === 'signin' ? 'register' : 'signin')}
             className="text-[10px] uppercase tracking-[0.15em] text-sub hover:text-white transition-colors bg-transparent border-none cursor-pointer"
           >
-            {mode === 'signin' 
-              ? "Don't have an account? Register →" 
-              : "Already have an account? Sign In →"}
+            {mode === 'signin'
+              ? 'Need first-time access? Create account view →'
+              : 'Already invited? Back to sign in →'}
           </button>
-          
-          <button 
-            onClick={onBack}
-            className="text-[10px] uppercase tracking-[0.15em] text-muted hover:text-white transition-colors bg-transparent border-none cursor-pointer"
-          >
-            ← Return to Dashboard
-          </button>
+
+          {!required && (
+            <button
+              onClick={onBack}
+              className="text-[10px] uppercase tracking-[0.15em] text-muted hover:text-white transition-colors bg-transparent border-none cursor-pointer"
+            >
+              ← Return to Dashboard
+            </button>
+          )}
         </div>
       </motion.div>
 
-      {/* System Status Footer */}
       <div className="absolute bottom-6 left-6 right-6 flex justify-between text-[9px] uppercase tracking-[0.2em] text-muted pointer-events-none">
-        <span>Auth_Protocol: TLS_1.3</span>
-        <span>Status: Ready</span>
+        <span>Auth_Protocol: GitHub_OAuth</span>
+        <span>{required ? 'Status: Authentication Required' : 'Status: Ready'}</span>
       </div>
     </div>
   );

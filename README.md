@@ -20,18 +20,34 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000`. The Vite dev server proxies `/v1` to `http://localhost:8080` by default, so leave `VITE_LECREV_API_BASE_URL` blank for local development.
+Open `http://localhost:3000`. `npm run dev` now starts both the Vite frontend and the Better Auth server. The Vite dev server proxies `/v1` to `http://localhost:8080` and `/api/auth` to the local Better Auth server by default.
 
 ## Local Environment
 
 Use these defaults in `.env.local` for the fastest local setup:
 
 ```bash
+AUTH_PORT="3001"
+BETTER_AUTH_URL="http://localhost:3000"
+VITE_BETTER_AUTH_URL="http://localhost:3000/api/auth"
+BETTER_AUTH_SECRET="replace-this-with-a-long-random-secret"
+BETTER_AUTH_DB_PATH="./data/better-auth.sqlite"
+GITHUB_CLIENT_ID="your-github-client-id"
+GITHUB_CLIENT_SECRET="your-github-client-secret"
 LECREV_API_TARGET="http://localhost:8080"
 VITE_LECREV_API_BASE_URL=""
 VITE_LECREV_API_KEY="dev-root-key"
 VITE_LECREV_PROJECT_ID="demo"
 ```
+
+## GitHub OAuth Setup
+
+Create a GitHub OAuth app and configure these values:
+
+- Homepage URL: `http://localhost:3000`
+- Authorization callback URL: `http://localhost:3000/api/auth/callback/github`
+
+After that, copy the client ID and client secret into `.env.local`.
 
 ## What the Dashboard Does
 
@@ -45,4 +61,5 @@ VITE_LECREV_PROJECT_ID="demo"
 
 - Runtime: `node22`
 - Regions: `ap-south-1`, `ap-south-2`, `ap-southeast-1`
-- Auth UI is still mock-only; the real control-plane auth path is the `X-API-Key` connection form.
+- Frontend auth now uses Better Auth with the GitHub social provider.
+- The control-plane connection form still uses the existing `X-API-Key` integration for backend API access.

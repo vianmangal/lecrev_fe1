@@ -9,6 +9,7 @@ import { AuthScreen } from './AuthScreen';
 import { CyanBtn } from './components/UI';
 import { Deployment, LogEntry, Project } from './types';
 import { DEPLOYS, PROJECTS } from './constants';
+import { authClient } from './lib/auth-client';
 import {
   ApiConnection,
   DeployRequestInput,
@@ -141,10 +142,46 @@ export default function App() {
   const [deploymentLogCache, setDeploymentLogCache] = useState<Record<string, string>>({});
   const [detailLogText, setDetailLogText] = useState<string | null>(null);
   const [integrationError, setIntegrationError] = useState<string | null>(null);
+  const [githubConfigured, setGithubConfigured] = useState<boolean | null>(null);
+  const { data: sessionData, isPending: isSessionPending, refetch: refetchSession } = authClient.useSession();
+  const activeUser = sessionData?.user ?? null;
+  const authRequired = githubConfigured !== false && !isSessionPending && !activeUser;
 
   useEffect(() => {
     window.localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(connection));
   }, [connection]);
+
+  useEffect(() => {
+    if (activeUser) {
+      setAuthMode(null);
+    }
+  }, [activeUser]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetch('/health/auth')
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Auth health check failed with ${response.status}`);
+        }
+        return response.json() as Promise<{ githubConfigured?: boolean }>;
+      })
+      .then((data) => {
+        if (!cancelled) {
+          setGithubConfigured(Boolean(data.githubConfigured));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setGithubConfigured(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const refreshCatalog = useCallback(async (conn: ApiConnection) => {
     const [regionsResult, projectsResult, deploymentsResult] = await Promise.allSettled([
@@ -523,6 +560,16 @@ export default function App() {
     setIntegrationError(null);
   }, []);
 
+  const handleSignOut = useCallback(async () => {
+    try {
+      await authClient.signOut();
+      await refetchSession();
+      setAcctOpen(false);
+    } catch (err) {
+      setIntegrationError(err instanceof Error ? err.message : 'Unable to sign out.');
+    }
+  }, [refetchSession]);
+
   const go = (nextScreen: ScreenName) => {
     setScreen(nextScreen);
     setAcctOpen(false);
@@ -531,11 +578,20 @@ export default function App() {
   return (
     <div className="flex h-screen bg-bg text-white overflow-hidden font-sans">
       <AnimatePresence>
-        {authMode && (
+        {(authRequired || authMode) && (
           <AuthScreen
-            initialMode={authMode}
-            onSuccess={() => setAuthMode(null)}
-            onBack={() => setAuthMode(null)}
+            initialMode={authMode ?? 'signin'}
+            required={authRequired}
+            githubConfigured={githubConfigured !== false}
+            onSuccess={() => {
+              void refetchSession();
+              setAuthMode(null);
+            }}
+            onBack={() => {
+              if (!authRequired) {
+                setAuthMode(null);
+              }
+            }}
           />
         )}
       </AnimatePresence>
@@ -626,35 +682,49 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="flex border border-border rounded-md overflow-hidden">
-              <SplitAuthBtn onClick={() => setAuthMode('signin')}>Sign In</SplitAuthBtn>
-              <div className="w-[1px] bg-border" />
-              <SplitAuthBtn onClick={() => setAuthMode('register')}>Register</SplitAuthBtn>
-            </div>
+            {!activeUser && !isSessionPending && (
+              <div className="flex border border-border rounded-md overflow-hidden">
+                <SplitAuthBtn onClick={() => setAuthMode('signin')}>Sign In</SplitAuthBtn>
+                <div className="w-[1px] bg-border" />
+                <SplitAuthBtn onClick={() => setAuthMode('register')}>Register</SplitAuthBtn>
+              </div>
+            )}
 
-            <div className="w-[1px] h-5 bg-border" />
+            {activeUser && (
+              <>
+                <div className="h-5 w-[1px] bg-border" />
 
-            <div className="relative">
-              <button
-                onClick={() => setAcctOpen(!acctOpen)}
-                className={`flex items-center gap-1.5 text-[10px] uppercase tracking-[0.15em] transition-colors duration-150 bg-transparent border-none px-1 py-1.5 cursor-pointer ${acctOpen ? 'text-white' : 'text-sub'}`}
-              >
-                Account
-                <motion.span
-                  animate={{ rotate: acctOpen ? 180 : 0 }}
-                  className="text-[7px] opacity-50"
-                >
-                  ▼
-                </motion.span>
-              </button>
-              <AnimatePresence>
-                {acctOpen && (
-                  <AccountDropdown onClose={() => setAcctOpen(false)} onNavigate={go} />
-                )}
-              </AnimatePresence>
-            </div>
+                <div className="relative">
+                  <button
+                    onClick={() => setAcctOpen(!acctOpen)}
+                    className={`flex items-center gap-1.5 text-[10px] uppercase tracking-[0.15em] transition-colors duration-150 bg-transparent border-none px-1 py-1.5 cursor-pointer ${acctOpen ? 'text-white' : 'text-sub'}`}
+                  >
+                    {activeUser.name || 'Account'}
+                    <motion.span
+                      animate={{ rotate: acctOpen ? 180 : 0 }}
+                      className="text-[7px] opacity-50"
+                    >
+                      ▼
+                    </motion.span>
+                  </button>
+                  <AnimatePresence>
+                    {acctOpen && (
+                      <AccountDropdown
+                        onClose={() => setAcctOpen(false)}
+                        onNavigate={go}
+                        onSignOut={handleSignOut}
+                        userEmail={activeUser.email}
+                        userName={activeUser.name || 'GitHub User'}
+                      />
+                    )}
+                  </AnimatePresence>
+                </div>
+              </>
+            )}
 
-            <CyanBtn onClick={() => go('deploy')}>Deploy</CyanBtn>
+            <CyanBtn onClick={() => go('deploy')} disabled={authRequired}>
+              Deploy
+            </CyanBtn>
           </div>
         </header>
 
@@ -706,6 +776,9 @@ export default function App() {
               <div className={`w-1.5 h-1.5 rounded-full ${integrationError ? 'bg-amber-500' : 'bg-cyan-primary'}`} />
               LECREV_SYSTEM_CORE
             </div>
+            <span>
+              {githubConfigured === false ? 'AUTH: Setup Required' : githubConfigured === true ? 'AUTH: GitHub Ready' : 'AUTH: Unknown'}
+            </span>
             <span className="flex items-center gap-1"><Globe size={10} /> {availableRegions[0] || 'ap-south-1'}</span>
             <span className="flex items-center gap-1"><Zap size={10} /> 200ms</span>
           </div>
@@ -754,7 +827,19 @@ function SplitAuthBtn({ children, onClick }: { children: React.ReactNode; onClic
   );
 }
 
-function AccountDropdown({ onClose, onNavigate }: { onClose: () => void; onNavigate: (screen: ScreenName) => void }) {
+function AccountDropdown({
+  onClose,
+  onNavigate,
+  onSignOut,
+  userEmail,
+  userName,
+}: {
+  onClose: () => void;
+  onNavigate: (screen: ScreenName) => void;
+  onSignOut: () => Promise<void>;
+  userEmail: string;
+  userName: string;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const handler = (event: MouseEvent) => {
@@ -768,11 +853,17 @@ function AccountDropdown({ onClose, onNavigate }: { onClose: () => void; onNavig
 
   const items = [
     { label: 'Profile', icon: '◉', action: onClose },
-    { label: 'Team', icon: '◎', action: () => { onNavigate('settings'); onClose(); } },
-    { label: 'API Keys', icon: '◇', action: () => { onNavigate('settings'); onClose(); } },
     { label: 'Settings', icon: '◆', action: () => { onNavigate('settings'); onClose(); } },
     { divider: true },
-    { label: 'Sign Out', icon: '→', action: onClose, danger: true },
+    {
+      label: 'Sign Out',
+      icon: '→',
+      action: () => {
+        onClose();
+        void onSignOut();
+      },
+      danger: true,
+    },
   ];
 
   return (
@@ -784,8 +875,8 @@ function AccountDropdown({ onClose, onNavigate }: { onClose: () => void; onNavig
       className="absolute top-[calc(100%+8px)] right-0 bg-elevated border border-border-md w-[220px] z-[100] shadow-[0_16px_48px_rgba(0,0,0,0.8)]"
     >
       <div className="p-4 border-b border-border">
-        <p className="text-[12px] mb-1">alex.chen</p>
-        <p className="text-[10px] text-sub">alex@lecrev.sh</p>
+        <p className="text-[12px] mb-1">{userName}</p>
+        <p className="text-[10px] text-sub">{userEmail}</p>
       </div>
       <div className="py-1">
         {items.map((item, index) => {
