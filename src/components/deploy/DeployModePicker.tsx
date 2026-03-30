@@ -19,7 +19,7 @@ const OPTIONS: Array<{
   {
     id: 'code',
     label: 'GitHub Import',
-    description: 'Import a repository through the GitHub App and deploy a runnable entry file.',
+    description: 'Choose an installed GitHub repository, point at an entrypoint, and deploy through the git build pipeline.',
     icon: <Code size={32} strokeWidth={1} />,
   },
   {

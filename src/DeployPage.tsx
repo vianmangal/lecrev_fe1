@@ -4,8 +4,9 @@ import { DeployRequestInput } from './api';
 import { DeployMode, DeployModePicker } from './components/deploy/DeployModePicker';
 import { FileDeployForm } from './components/deploy/FileDeployForm';
 import { FunctionDeployForm } from './components/deploy/FunctionDeployForm';
-import { GitHubDeployForm } from './components/deploy/GitHubDeployForm';
+import { GitHubDeployForm, GitHubDeploySubmission } from './components/deploy/GitHubDeployForm';
 import { DeploySuccess } from './components/deploy/DeploySuccess';
+import { registerGitHubDeploymentBinding } from './lib/github-app';
 
 interface DeployPageProps {
   onBack: () => void;
@@ -23,7 +24,6 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
   const [functionVal, setFunctionVal] = useState(DEFAULT_HANDLER);
   const [environment, setEnvironment] = useState<'Production' | 'Staging' | 'Preview'>('Production');
   const [region, setRegion] = useState(regionOptions[0] || 'ap-south-1');
-  const [repoInput, setRepoInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deployInfo, setDeployInfo] = useState<{ versionId: string; buildJobId?: string } | null>(null);
@@ -50,7 +50,6 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
     setDeployed(false);
     setMode(null);
     setFile(null);
-    setRepoInput('');
     setDeployInfo(null);
     setError(null);
   };
@@ -62,8 +61,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
 
     const selectedRegion = region.trim() || regionOptions[0] || 'ap-south-1';
     const cleanedProject = defaultProjectId.trim() || 'default-project';
-    const repoName = repoInput ? repoInput.split('/').pop()?.replace(/\.git$/, '') : 'app';
-    const cleanedName = sanitizeName(repoName || 'ui-function');
+    const cleanedName = sanitizeName(mode === 'file' ? (file?.name || 'uploaded-function') : 'ui-function');
 
     if (mode === 'file') {
       if (!file) {
@@ -110,7 +108,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
     }
   };
 
-  const handleGitHubDeploy = async (bundle: { entrypoint: string; inlineFiles: Record<string, string>; repoFullName: string }) => {
+  const handleGitHubDeploy = async (submission: GitHubDeploySubmission) => {
     setError(null);
     setIsSubmitting(true);
     try {
@@ -118,13 +116,30 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
       const cleanedProject = defaultProjectId.trim() || 'default-project';
       const request: DeployRequestInput = {
         projectId: cleanedProject,
-        name: sanitizeName(bundle.repoFullName.replace(/\//g, '-')),
+        name: sanitizeName(submission.functionName || submission.repoFullName.replace(/\//g, '-')),
         environment,
         region: selectedRegion,
-        entrypoint: bundle.entrypoint,
-        inlineFiles: bundle.inlineFiles,
+        entrypoint: submission.entrypoint,
+        gitUrl: submission.gitUrl,
+        gitRef: submission.gitRef,
       };
       const info = await onDeploy(request);
+      await registerGitHubDeploymentBinding({
+        installationId: submission.installationId,
+        owner: submission.owner,
+        repo: submission.repo,
+        repoFullName: submission.repoFullName,
+        gitUrl: submission.gitUrl,
+        gitRef: submission.gitRef,
+        entrypoint: submission.entrypoint,
+        projectId: cleanedProject,
+        functionName: request.name,
+        environment: environment.toLowerCase() as 'production' | 'staging' | 'preview',
+        region: selectedRegion,
+        autoDeploy: true,
+        lastFunctionVersionId: info.versionId,
+        lastBuildJobId: info.buildJobId,
+      });
       setDeployInfo(info);
       setDeployed(true);
     } catch (err) {
@@ -198,19 +213,16 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
 
             {mode === 'code' && (
               <GitHubDeployForm
-                repoInput={repoInput}
                 environment={environment}
                 region={region}
                 regionOptions={regionOptions}
                 isSubmitting={isSubmitting}
                 error={error}
-                onRepoInputChange={setRepoInput}
                 onEnvironmentChange={setEnvironment}
                 onRegionChange={setRegion}
                 onCancel={() => {
                   setMode(null);
                   setError(null);
-                  setRepoInput('');
                 }}
                 onDeploy={handleGitHubDeploy}
               />

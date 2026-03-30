@@ -21,6 +21,7 @@ npm run dev
 ```
 
 Open `http://localhost:3000`. `npm run dev` now starts both the Vite frontend and the Better Auth server. The Vite dev server proxies `/v1` to `http://localhost:8080` and `/api/auth` to the local Better Auth server by default.
+The auth service also serves `/api/github/*` for GitHub App repo discovery, binding persistence, and webhook-triggered git deploys.
 
 ## Production Build
 
@@ -32,6 +33,7 @@ npm run build
 ```
 
 Keep `VITE_LECREV_API_BASE_URL` blank so the built frontend uses same-origin `/v1` requests through nginx.
+Set `LECREV_API_KEY`, `GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY_PATH`, and `GITHUB_WEBHOOK_SECRET` in the deployed auth env if you want GitHub repo picking and auto-deploy on push.
 
 ## Local Environment
 
@@ -45,7 +47,14 @@ BETTER_AUTH_SECRET="replace-this-with-a-long-random-secret"
 BETTER_AUTH_DB_PATH="./data/better-auth.sqlite"
 GITHUB_CLIENT_ID="your-github-client-id"
 GITHUB_CLIENT_SECRET="your-github-client-secret"
+GITHUB_APP_ID="your-github-app-id"
+GITHUB_PRIVATE_KEY_PATH="./github-app.private-key.pem"
+GITHUB_WEBHOOK_SECRET="replace-this-with-a-long-random-secret"
 LECREV_API_TARGET="http://localhost:8080"
+LECREV_API_KEY="dev-root-key"
+LECREV_PUBLIC_API_URL="http://localhost:8080"
+LECREV_DEFAULT_PROJECT_ID="demo"
+GITHUB_APP_DB_PATH="./data/github-app.sqlite"
 VITE_LECREV_API_BASE_URL=""
 VITE_LECREV_API_KEY="dev-root-key"
 VITE_LECREV_PROJECT_ID="demo"
@@ -59,6 +68,23 @@ Create a GitHub OAuth app and configure these values:
 - Authorization callback URL: `http://localhost:3000/api/auth/callback/github`
 
 After that, copy the client ID and client secret into `.env.local`.
+
+## GitHub App Setup
+
+For repo discovery and auto-deploy from push events, configure the GitHub App with:
+
+- Homepage URL: `http://localhost:3000`
+- Webhook URL: `http://localhost:3000/api/github/webhooks`
+- Webhook secret: match `GITHUB_WEBHOOK_SECRET`
+- Repository permissions:
+  - Metadata: read-only
+  - Contents: read-only
+  - Commit statuses: read/write
+  - Checks: read/write
+  - Deployments: read/write
+  - Pull requests: read-only
+
+The frontend deploy screen now lists repositories directly from the GitHub App installation instead of requiring manual `owner/repo` input. After a successful GitHub-backed deploy, the auth service persists an auto-deploy binding so later `push` webhooks can trigger a new control-plane git deploy automatically and update the GitHub commit status.
 
 ## What the Dashboard Does
 

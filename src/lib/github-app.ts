@@ -6,46 +6,69 @@ export interface GitHubAppStatus {
   installUrl?: string;
 }
 
-interface GitHubRepoInfo {
+export interface GitHubInstallation {
+  id: number;
+  accountLogin: string;
+  accountType: string;
+  avatarUrl?: string;
+  repositorySelection: string;
+}
+
+export interface GitHubRepository {
+  id: number;
+  installationId?: number;
   owner: string;
   repo: string;
   fullName: string;
   defaultBranch: string;
   private: boolean;
+  htmlUrl?: string;
+  gitUrl?: string;
 }
 
-interface GitHubTreeEntry {
-  path: string;
-  sha: string;
-  url: string;
-  type: 'blob' | 'tree';
+export interface GitHubRepoInspection {
+  repository: GitHubRepository;
+  ref: string;
+  entrypointCandidates: string[];
+  suggestedEntrypoint: string;
+  suggestedFunctionName: string;
 }
 
-function decodeBase64Content(base64: string): string {
-  return decodeURIComponent(escape(window.atob(base64)));
+export interface GitHubDeploymentBindingInput {
+  installationId: number;
+  owner: string;
+  repo: string;
+  repoFullName: string;
+  gitUrl: string;
+  gitRef: string;
+  entrypoint: string;
+  projectId: string;
+  functionName: string;
+  environment: 'production' | 'staging' | 'preview';
+  region: string;
+  autoDeploy?: boolean;
+  lastFunctionVersionId?: string;
+  lastBuildJobId?: string;
 }
 
-export function parseGitHubRepo(input: string): { owner: string; repo: string } | null {
-  const trimmed = input.trim();
-  if (!trimmed) return null;
-  let candidate = trimmed;
-  try {
-    const url = new URL(trimmed);
-    if (url.hostname === 'github.com' && url.pathname) {
-      candidate = url.pathname.replace(/^\//, '').replace(/\.git$/, '');
-    }
-  } catch {
-    // not a URL
-  }
-  const parts = candidate.replace(/\.git$/, '').split('/').filter(Boolean);
-  if (parts.length !== 2) return null;
-  return { owner: parts[0], repo: parts[1] };
+interface GitHubInstallationsResponse {
+  configured: boolean;
+  installations: GitHubInstallation[];
+}
+
+interface GitHubRepoListResponse {
+  installationId: number;
+  page: number;
+  perPage: number;
+  totalCount: number;
+  hasNextPage: boolean;
+  repositories: GitHubRepository[];
 }
 
 async function requestGitHubApp<T>(path: string): Promise<T> {
   const response = await fetch(path, {
     headers: {
-      'Accept': 'application/json',
+      Accept: 'application/json',
     },
   });
 
@@ -60,52 +83,45 @@ export async function getGitHubAppStatus(): Promise<GitHubAppStatus> {
   return requestGitHubApp<GitHubAppStatus>('/api/github/app');
 }
 
-async function getGitHubRepo(owner: string, repo: string): Promise<GitHubRepoInfo> {
-  return requestGitHubApp<GitHubRepoInfo>(`/api/github/repos/${owner}/${repo}`);
+export async function listGitHubInstallations(): Promise<GitHubInstallation[]> {
+  const payload = await requestGitHubApp<GitHubInstallationsResponse>('/api/github/installations');
+  return payload.installations ?? [];
 }
 
-async function getGitHubRepoTree(owner: string, repo: string, ref: string): Promise<{ tree: GitHubTreeEntry[] }> {
-  const params = new URLSearchParams({ recursive: '1' });
-  return requestGitHubApp<{ tree: GitHubTreeEntry[] }>(`/api/github/repos/${owner}/${repo}/git/trees/${encodeURIComponent(ref)}?${params.toString()}`);
-}
-
-async function getGitHubRepoContent(owner: string, repo: string, filePath: string, ref: string): Promise<{ content: string }> {
+export async function listGitHubRepositories(installationId: number, query = ''): Promise<GitHubRepository[]> {
   const params = new URLSearchParams({
-    path: filePath,
-    ref,
+    installationId: String(installationId),
+    perPage: '100',
   });
-  return requestGitHubApp<{ content: string }>(`/api/github/repos/${owner}/${repo}/contents?${params.toString()}`);
+  if (query.trim()) {
+    params.set('q', query.trim());
+  }
+
+  const payload = await requestGitHubApp<GitHubRepoListResponse>(`/api/github/repos?${params.toString()}`);
+  return payload.repositories ?? [];
 }
 
-export async function importGitHubRepository(repoInput: string): Promise<{
-  entrypoint: string;
-  inlineFiles: Record<string, string>;
-  repoFullName: string;
-}> {
-  const parsed = parseGitHubRepo(repoInput);
-  if (!parsed) {
-    throw new Error('Invalid repo format. Use owner/repo or a GitHub URL.');
+export async function inspectGitHubRepository(owner: string, repo: string, ref?: string): Promise<GitHubRepoInspection> {
+  const params = new URLSearchParams();
+  if (ref?.trim()) {
+    params.set('ref', ref.trim());
   }
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return requestGitHubApp<GitHubRepoInspection>(`/api/github/repos/${owner}/${repo}/inspect${suffix}`);
+}
 
-  const repo = await getGitHubRepo(parsed.owner, parsed.repo);
-  const branch = repo.defaultBranch || 'main';
-  const tree = await getGitHubRepoTree(parsed.owner, parsed.repo, branch);
-
-  const jsFiles = (tree.tree || []).filter(
-    (item) => item.type === 'blob' && /\.(js|mjs|ts|tsx)$/.test(item.path),
-  );
-  if (jsFiles.length === 0) {
-    throw new Error('No JavaScript or TypeScript files found in the repository.');
-  }
-
-  const mainFile = jsFiles.find((entry) => /(^|\/)(index|main|handler)\.(js|mjs|ts|tsx)$/.test(entry.path)) || jsFiles[0];
-  const contentData = await getGitHubRepoContent(parsed.owner, parsed.repo, mainFile.path, branch);
-
-  return {
-    entrypoint: mainFile.path,
-    inlineFiles: {
-      [mainFile.path]: decodeBase64Content(contentData.content.replace(/\n/g, '')),
+export async function registerGitHubDeploymentBinding(input: GitHubDeploymentBindingInput): Promise<void> {
+  await fetch('/api/github/deployments/bindings', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
     },
-    repoFullName: repo.fullName,
-  };
+    body: JSON.stringify(input),
+  }).then(async (response) => {
+    const raw = await response.text();
+    if (!response.ok) {
+      throw new Error(raw.trim() || `GitHub binding registration failed with ${response.status}`);
+    }
+  });
 }
