@@ -4,7 +4,12 @@ import { AuthScreen } from './AuthScreen';
 import { DeploymentsScreen, ProjectsScreen } from './Screens';
 import { Deployment, Project } from './types';
 
-const HERO_TEXT = 'Lecrev is the best way to implement.';
+const HERO_PREFIX_TEXT = 'Lecrev is the best way to implement...';
+const FLIP_WORDS = ['workflows.', 'functions.', 'websites.', 'features.'];
+const FLIP_WORD_WIDTH_CH = Math.max(...FLIP_WORDS.map((word) => word.length));
+const FLIP_ANIMATION_MS = 520;
+const FLIP_SWAP_MS = Math.round(FLIP_ANIMATION_MS * 0.5);
+const FLIP_HOLD_MS = 2000;
 
 const DEMO_PROJECTS: Project[] = [
   {
@@ -35,6 +40,8 @@ type DashboardScreen = 'projects' | 'deployments' | 'settings';
 
 export default function App() {
   const [typedText, setTypedText] = useState('');
+  const [flipIndex, setFlipIndex] = useState(0);
+  const [isFlippingWord, setIsFlippingWord] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'signin' | 'register'>('signin');
   const [view, setView] = useState<AppView>('landing');
@@ -44,8 +51,8 @@ export default function App() {
     let timeoutId = 0;
 
     const typeNext = () => {
-      if (index <= HERO_TEXT.length) {
-        setTypedText(HERO_TEXT.slice(0, index));
+      if (index <= HERO_PREFIX_TEXT.length) {
+        setTypedText(HERO_PREFIX_TEXT.slice(0, index));
         index += 1;
         const delay = 50 + Math.floor(Math.random() * 31);
         timeoutId = window.setTimeout(typeNext, delay);
@@ -58,6 +65,43 @@ export default function App() {
       window.clearTimeout(timeoutId);
     };
   }, []);
+
+  const typingComplete = typedText.length >= HERO_PREFIX_TEXT.length;
+
+  useEffect(() => {
+    if (!typingComplete) {
+      return;
+    }
+
+    let isCancelled = false;
+    let cycleTimeoutId = 0;
+    let swapTimeoutId = 0;
+    let completeTimeoutId = 0;
+
+    const runCycle = () => {
+      if (isCancelled) {
+        return;
+      }
+      setIsFlippingWord(true);
+      swapTimeoutId = window.setTimeout(() => {
+        setFlipIndex((prev) => (prev + 1) % FLIP_WORDS.length);
+      }, FLIP_SWAP_MS);
+
+      completeTimeoutId = window.setTimeout(() => {
+        setIsFlippingWord(false);
+        cycleTimeoutId = window.setTimeout(runCycle, FLIP_HOLD_MS);
+      }, FLIP_ANIMATION_MS);
+    };
+
+    cycleTimeoutId = window.setTimeout(runCycle, FLIP_HOLD_MS);
+
+    return () => {
+      isCancelled = true;
+      window.clearTimeout(cycleTimeoutId);
+      window.clearTimeout(swapTimeoutId);
+      window.clearTimeout(completeTimeoutId);
+    };
+  }, [typingComplete]);
 
   const openAuth = (mode: 'signin' | 'register') => {
     setAuthMode(mode);
@@ -109,14 +153,27 @@ export default function App() {
           </span>
           <span className="font-black text-base tracking-tighter whitespace-nowrap uppercase">LECREV</span>
         </div>
-        <section className="relative mx-auto max-w-6xl px-4 pb-20 pt-24 sm:px-6 sm:pb-28 sm:pt-28 lg:px-8">
-          <div className="mx-auto max-w-4xl text-center">
-            <h1 className="mx-auto min-h-[5.75rem] max-w-4xl text-balance text-2xl font-medium leading-tight tracking-[-0.02em] text-white sm:min-h-[6.75rem] sm:text-4xl md:min-h-[8rem] md:text-5xl">
-              {typedText}
-              <span className="type-cursor" aria-hidden="true">|</span>
-            </h1>
+        <section className="relative min-h-dvh flex items-center">
+          <div className="w-full py-24 sm:py-28">
+            <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+              <h1 className="mx-auto min-h-[5.75rem] max-w-[1200px] text-center text-2xl font-medium leading-tight tracking-[-0.02em] text-white sm:min-h-[6.75rem] sm:text-4xl md:min-h-[8rem] md:text-5xl lg:whitespace-nowrap xl:max-w-[1400px]">
+                {typedText}
+                {typingComplete && (
+                  <>
+                    <span className="flip-word-perspective" aria-hidden="true">
+                      <span
+                        className={`flip-word ${isFlippingWord ? 'flipping' : ''}`}
+                        style={{ width: `${FLIP_WORD_WIDTH_CH}ch` }}
+                      >
+                        {FLIP_WORDS[flipIndex]}
+                      </span>
+                    </span>
+                  </>
+                )}
+              </h1>
+            </div>
 
-            <div className="mx-auto mt-8 w-full max-w-5xl sm:mt-12">
+            <div className="mx-auto mt-8 w-full max-w-5xl px-4 sm:mt-12 sm:px-6 lg:px-8">
               <div className="relative aspect-video overflow-hidden rounded-2xl border border-border-md bg-surface shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_30px_80px_rgba(0,0,0,0.55)]">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(255,255,255,0.08),transparent_55%)]" />
                 <div className="absolute left-4 top-4 flex gap-2 opacity-70">
