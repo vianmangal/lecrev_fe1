@@ -98,7 +98,7 @@ export const DeploymentsScreen: React.FC<DeploymentsScreenProps> = ({ deployment
       transition={{ duration: 0.25, ease: 'easeOut' }}
       className="flex-1 overflow-y-auto p-4 sm:p-8 md:p-12"
     >
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-8">
         <h2 className="text-xl uppercase tracking-tight text-sub font-normal">Deployments</h2>
         <span className="text-[10px] uppercase tracking-[0.15em] text-sub">{filtered.length} / {deployments.length} shown</span>
       </div>
@@ -107,7 +107,7 @@ export const DeploymentsScreen: React.FC<DeploymentsScreenProps> = ({ deployment
         <FilterBtn val="All" cur={envF} set={setEnvF} />
         <FilterBtn val="Production" cur={envF} set={setEnvF} />
         <FilterBtn val="Staging" cur={envF} set={setEnvF} />
-        <div className="ml-auto flex gap-2 flex-wrap">
+        <div className="w-full sm:w-auto sm:ml-auto flex gap-2 flex-wrap">
           {['Active', 'Building', 'Ready', 'Failed'].map((s) => (
             <FilterBtn key={s} val={s} cur={statusF} set={setStatusF} />
           ))}

@@ -50,9 +50,9 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({
       transition={{ duration: 0.22, ease: 'easeOut' }}
       className="flex-1 overflow-y-auto p-4 sm:p-8 md:p-12"
     >
-      <div className="flex items-start justify-between mb-8 md:mb-12">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-8 md:mb-12">
         <div>
-          <h2 className="text-2xl sm:text-3xl md:text-4xl tracking-tighter font-normal mb-3">
+          <h2 className="text-2xl sm:text-3xl md:text-4xl tracking-tighter font-normal mb-3 break-all">
             {project.url}
           </h2>
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.15em] text-cyan-primary">
@@ -125,13 +125,13 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({
         </div>
       </div>
 
-      <div className="border-b border-border flex gap-8 mb-8 relative">
+      <div className="border-b border-border flex gap-5 sm:gap-8 mb-8 relative overflow-x-auto whitespace-nowrap">
         {TABS.map((t) => (
           <button
             key={t}
             onClick={() => setActiveTab(t)}
             className={`
-              text-[10px] uppercase tracking-[0.12em] bg-transparent border-none pb-2.5 cursor-pointer transition-colors duration-150 mb-[-1px] relative
+              shrink-0 text-[10px] uppercase tracking-[0.12em] bg-transparent border-none pb-2.5 cursor-pointer transition-colors duration-150 mb-[-1px] relative
               ${activeTab === t ? 'text-white' : 'text-sub hover:text-neutral-300'}
             `}
           >

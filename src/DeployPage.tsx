@@ -130,16 +130,16 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
     <motion.div
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="flex-1 flex flex-col items-center justify-center gap-6"
+      className="flex-1 flex flex-col items-center justify-center gap-6 px-4"
     >
       <div className="w-14 h-14 rounded-full border border-cyan-primary flex items-center justify-center text-cyan-primary">
         <CheckCircle2 size={32} />
       </div>
       <p className="text-sm uppercase tracking-[0.1em]">Deployment Queued</p>
       <p className="text-[11px] text-sub">{deployInfo?.buildJobId || deployInfo?.versionId || 'deployment'}</p>
-      <div className="flex gap-3 mt-2">
-        <GhostBtn onClick={() => { setDeployed(false); setMode(null); setFile(null); setDeployInfo(null); setError(null); }}>New Deployment</GhostBtn>
-        <CyanBtn onClick={onBack}>View Deployments →</CyanBtn>
+      <div className="flex flex-col sm:flex-row gap-3 mt-2 w-full sm:w-auto">
+        <GhostBtn className="w-full sm:w-auto" onClick={() => { setDeployed(false); setMode(null); setFile(null); setDeployInfo(null); setError(null); }}>New Deployment</GhostBtn>
+        <CyanBtn className="w-full sm:w-auto" onClick={onBack}>View Deployments →</CyanBtn>
       </div>
     </motion.div>
   );
@@ -175,7 +175,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
       </button>
 
       <div className="mb-12">
-        <h2 className="text-3xl tracking-tighter font-normal mb-3">
+        <h2 className="text-2xl sm:text-3xl tracking-tighter font-normal mb-3">
           New Deployment
         </h2>
         <p className="text-[12px] text-sub">Choose how you want to deploy your project.</p>
@@ -201,7 +201,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
               <button
                 key={opt.id}
                 onClick={() => setMode(opt.id)}
-                className="group bg-black border border-transparent hover:border-border-md p-10 cursor-pointer text-left transition-all duration-150 flex flex-col gap-5"
+                className="group bg-black border border-transparent hover:border-border-md p-6 sm:p-10 cursor-pointer text-left transition-all duration-150 flex flex-col gap-5"
               >
                 <div className="text-sub group-hover:text-cyan-primary transition-colors duration-150">{opt.icon}</div>
                 <div>
@@ -235,7 +235,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
                   onDrop={handleDrop}
                   onClick={() => fileRef.current?.click()}
                   className={`
-                    border border-dashed p-16 text-center cursor-pointer mb-8 transition-all duration-150
+                    border border-dashed p-10 sm:p-16 text-center cursor-pointer mb-8 transition-all duration-150
                     ${dragging ? "border-cyan-primary bg-cyan-primary/5" : file ? "border-cyan-primary/40 bg-surface" : "border-border-md bg-surface hover:border-sub"}
                   `}
                 >
@@ -261,7 +261,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
 
             {mode === "code" && (
               <div className="max-w-[800px]">
-                <div className="grid grid-cols-2 gap-5 mb-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
                   <SelectInput label="Runtime" options={["node22"]} />
                   <SelectInput label="Region" options={regionOptions.length ? regionOptions : ['ap-south-1']} value={region} onChange={setRegion} />
                 </div>
@@ -286,7 +286,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
 
             {mode === "function" && (
               <div className="flex flex-col gap-5 mb-8">
-                <div className="grid grid-cols-2 gap-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                   <SelectInput label="Runtime" options={["node22"]} />
                   <SelectInput label="Trigger Type" options={["HTTP"]} />
                 </div>
@@ -312,9 +312,9 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
               </div>
             )}
 
-            <div className="flex gap-3">
-              <GhostBtn onClick={() => { setMode(null); setError(null); }} disabled={isSubmitting}>Cancel</GhostBtn>
-              <CyanBtn onClick={handleDeploy} disabled={!canSubmit}>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <GhostBtn className="w-full sm:w-auto" onClick={() => { setMode(null); setError(null); }} disabled={isSubmitting}>Cancel</GhostBtn>
+              <CyanBtn className="w-full sm:w-auto" onClick={handleDeploy} disabled={!canSubmit}>
                 {isSubmitting ? 'Submitting...' : mode === 'file' && !file ? 'Select a File First' : 'Deploy ->'}
               </CyanBtn>
             </div>

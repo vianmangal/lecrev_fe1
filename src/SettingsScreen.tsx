@@ -111,9 +111,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ settingsTab, set
                     </div>
                   </div>
                 )}
-                <div className="flex items-center justify-between mt-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mt-5">
                   <span className="text-[9px] uppercase tracking-[0.12em] text-muted">{savedAt ? `Saved ${savedAt}` : 'Local browser storage'}</span>
-                  <CyanBtn onClick={saveConnection}>Save Connection</CyanBtn>
+                  <CyanBtn className="w-full sm:w-auto" onClick={saveConnection}>Save Connection</CyanBtn>
                 </div>
               </div>
             </motion.div>
