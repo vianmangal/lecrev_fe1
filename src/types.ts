@@ -16,6 +16,7 @@ export interface LogEntry {
 }
 
 export interface Project {
+  id: string;
   name: string;
   url: string;
   status: 'Production' | 'Staging' | 'Preview';

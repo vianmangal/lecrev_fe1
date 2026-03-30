@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { DEPLOYS, PROJECTS } from './constants';
 import { StatusBadge, GhostBtn } from './components/UI';
 import { Deployment, Project } from './types';
@@ -16,7 +16,7 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({ onViewProject, p
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      transition={{ duration: 0.25, ease: "easeOut" }}
+      transition={{ duration: 0.25, ease: 'easeOut' }}
       className="flex-1 overflow-y-auto p-12"
     >
       <div className="mb-12">
@@ -35,7 +35,7 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({ onViewProject, p
       </div>
 
       <div className="grid grid-cols-4 gap-10 mb-12">
-        {[["Branch", "main"], ["Commit", "7a0f3d2"], ["Age", "2m"], ["Region", "LHR"]].map(([k, v]) => (
+        {[['Branch', 'main'], ['Commit', '7a0f3d2'], ['Age', '2m'], ['Region', 'ap-south-1']].map(([k, v]) => (
           <div key={k}>
             <p className="text-[10px] uppercase tracking-[0.15em] text-sub mb-2">{k}</p>
             <p className="text-sm">{v}</p>
@@ -56,9 +56,9 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({ onViewProject, p
           <span className="text-[10px] uppercase tracking-[0.15em] text-sub cursor-pointer hover:text-white">View All</span>
         </div>
         <div className="bg-border mt-0 space-y-[1px]">
-          {projectRows.map(p => (
+          {projectRows.map((p) => (
             <div
-              key={p.name}
+              key={p.id}
               onClick={() => onViewProject(p)}
               className="group bg-black flex items-center justify-between p-6 cursor-pointer hover:bg-surface transition-colors duration-150"
             >
@@ -70,7 +70,7 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({ onViewProject, p
                 <div className="text-right">
                   <StatusBadge status={p.status} />
                   <p className="text-[9px] uppercase tracking-[0.15em] text-muted mt-1">
-                    {p.active ? "Active · " : ""}{p.instances}
+                    {p.active ? 'Active · ' : ''}{p.instances}
                   </p>
                 </div>
               </div>
@@ -82,7 +82,7 @@ export const ProjectsScreen: React.FC<ProjectsScreenProps> = ({ onViewProject, p
   );
 };
 
-const DEPLOY_COLS = "grid-cols-[1.8fr_1.4fr_1.1fr_1fr_1.1fr_1.1fr_0.7fr]";
+const DEPLOY_COLS = 'grid-cols-[1.8fr_1.4fr_1.1fr_1fr_1.1fr_1.1fr_0.7fr]';
 
 interface FilterBtnProps {
   val: string;
@@ -94,10 +94,10 @@ const FilterBtn: React.FC<FilterBtnProps> = ({ val, cur, set }) => {
   const active = cur === val;
   return (
     <button
-      onClick={() => set(active ? "All" : val)}
+      onClick={() => set(active ? 'All' : val)}
       className={`
         border px-4 py-1.5 text-[9px] uppercase tracking-[0.15em] cursor-pointer transition-all duration-150
-        ${active ? "border-border-md text-white bg-surface" : "border-border text-sub hover:border-border-md hover:text-neutral-300"}
+        ${active ? 'border-border-md text-white bg-surface' : 'border-border text-sub hover:border-border-md hover:text-neutral-300'}
       `}
     >
       {val}
@@ -110,13 +110,13 @@ interface DeploymentsScreenProps {
 }
 
 export const DeploymentsScreen: React.FC<DeploymentsScreenProps> = ({ deployments }) => {
-  const [envF, setEnvF] = React.useState("All");
-  const [statusF, setStatusF] = React.useState("All");
+  const [envF, setEnvF] = React.useState('All');
+  const [statusF, setStatusF] = React.useState('All');
   const deploymentRows = deployments && deployments.length > 0 ? deployments : DEPLOYS;
 
-  const filtered = deploymentRows.filter(d =>
-    (envF === "All" || d.env === envF) &&
-    (statusF === "All" || d.status === statusF)
+  const filtered = deploymentRows.filter((d) =>
+    (envF === 'All' || d.env === envF) &&
+    (statusF === 'All' || d.status === statusF),
   );
 
   return (
@@ -124,7 +124,7 @@ export const DeploymentsScreen: React.FC<DeploymentsScreenProps> = ({ deployment
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      transition={{ duration: 0.25, ease: "easeOut" }}
+      transition={{ duration: 0.25, ease: 'easeOut' }}
       className="flex-1 overflow-y-auto p-12"
     >
       <div className="flex items-center justify-between mb-8">
@@ -137,20 +137,20 @@ export const DeploymentsScreen: React.FC<DeploymentsScreenProps> = ({ deployment
         <FilterBtn val="Production" cur={envF} set={setEnvF} />
         <FilterBtn val="Staging" cur={envF} set={setEnvF} />
         <div className="ml-auto flex gap-2">
-          {["Active", "Building", "Ready", "Failed"].map(s =>
+          {['Active', 'Building', 'Ready', 'Failed'].map((s) => (
             <FilterBtn key={s} val={s} cur={statusF} set={setStatusF} />
-          )}
+          ))}
         </div>
       </div>
 
       <div className={`grid ${DEPLOY_COLS} gap-3 pb-3 border-b border-border mb-[1px]`}>
-        {["Deployment", "Project", "Branch", "Commit", "Environment", "Status", "Age"].map(h =>
+        {['Deployment', 'Project', 'Branch', 'Commit', 'Environment', 'Status', 'Age'].map((h) => (
           <span key={h} className="text-[10px] uppercase tracking-[0.15em] text-sub">{h}</span>
-        )}
+        ))}
       </div>
 
       <div className="bg-border space-y-[1px]">
-        {filtered.map(d => (
+        {filtered.map((d) => (
           <div
             key={d.id}
             className={`grid ${DEPLOY_COLS} gap-3 py-3.5 px-0 bg-black items-center hover:bg-surface transition-colors duration-150 group`}

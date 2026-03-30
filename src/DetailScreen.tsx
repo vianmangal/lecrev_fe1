@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { LOGS, DEPLOYS } from './constants';
-import { StatusBadge, GhostBtn, CyanBtn, TextInput, SelectInput } from './components/UI';
+import { StatusBadge, CyanBtn, TextInput, SelectInput } from './components/UI';
 import { Deployment, LogEntry, Project } from './types';
 
 interface DetailScreenProps {
@@ -14,25 +14,25 @@ interface DetailScreenProps {
 }
 
 export const DetailScreen: React.FC<DetailScreenProps> = ({ project, onBack, activeTab, setActiveTab, deployments, logs }) => {
-  const p = project || { name: "Core Platform", url: "core-platform-v2.lecrev.app", status: "Production" as const, instances: "24" };
-  const TABS = ["deployments", "logs", "settings"];
+  const p = project || { id: 'core-platform', name: 'Core Platform', url: 'core-platform.lecrev.app', status: 'Production' as const, instances: '24' };
+  const TABS = ['deployments', 'logs', 'settings'];
   const deploymentRows = deployments && deployments.length > 0 ? deployments : DEPLOYS;
   const logRows = logs && logs.length > 0 ? logs : LOGS;
   const latestDeploy = deploymentRows[0];
 
   const infoRows: Array<[string, string]> = [
-    ["Branch", latestDeploy?.branch || "main"],
-    ["Commit", latestDeploy?.commit || "7a0f3d2"],
-    ["Region", latestDeploy?.region || "ap-south-1"],
-    ["Instances", latestDeploy?.status === 'Active' ? '1' : '0'],
-    ["Age", latestDeploy?.age || 'now'],
-    ["Version", latestDeploy ? latestDeploy.id.slice(0, 12) : 'v-local'],
+    ['Branch', latestDeploy?.branch || 'main'],
+    ['Commit', latestDeploy?.commit || '7a0f3d2'],
+    ['Region', latestDeploy?.region || 'ap-south-1'],
+    ['Instances', latestDeploy?.status === 'Active' ? '1' : '0'],
+    ['Age', latestDeploy?.age || 'now'],
+    ['Version', latestDeploy ? latestDeploy.id.slice(0, 12) : 'v-local'],
   ];
 
   const pts = [20, 45, 30, 70, 55, 80, 60, 90, 75, 95, 85, 100];
   const W = 400;
   const H = 80;
-  const pathD = pts.map((v, i) => `${i === 0 ? "M" : "L"}${(i / (pts.length - 1)) * W} ${H - (v / 100) * H}`).join(" ");
+  const pathD = pts.map((v, i) => `${i === 0 ? 'M' : 'L'}${(i / (pts.length - 1)) * W} ${H - (v / 100) * H}`).join(' ');
   const areaD = pathD + ` L${W} ${H} L0 ${H} Z`;
 
   return (
@@ -40,7 +40,7 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({ project, onBack, act
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}
-      transition={{ duration: 0.22, ease: "easeOut" }}
+      transition={{ duration: 0.22, ease: 'easeOut' }}
       className="flex-1 overflow-y-auto p-12"
     >
       <button
@@ -85,7 +85,7 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({ project, onBack, act
             <motion.path
               initial={{ pathLength: 0 }}
               animate={{ pathLength: 1 }}
-              transition={{ duration: 1.5, ease: "easeInOut" }}
+              transition={{ duration: 1.5, ease: 'easeInOut' }}
               d={pathD}
               fill="none"
               stroke="#22d3ee"
@@ -100,13 +100,13 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({ project, onBack, act
       </div>
 
       <div className="border-b border-border flex gap-8 mb-8 relative">
-        {TABS.map(t => (
+        {TABS.map((t) => (
           <button
             key={t}
             onClick={() => setActiveTab(t)}
             className={`
               text-[10px] uppercase tracking-[0.12em] bg-transparent border-none pb-2.5 cursor-pointer transition-colors duration-150 mb-[-1px] relative
-              ${activeTab === t ? "text-white" : "text-sub hover:text-neutral-300"}
+              ${activeTab === t ? 'text-white' : 'text-sub hover:text-neutral-300'}
             `}
           >
             {t}
@@ -121,7 +121,7 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({ project, onBack, act
       </div>
 
       <AnimatePresence mode="wait">
-        {activeTab === "deployments" && (
+        {activeTab === 'deployments' && (
           <motion.div
             key="deployments"
             initial={{ opacity: 0, y: 10 }}
@@ -130,12 +130,12 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({ project, onBack, act
             transition={{ duration: 0.2 }}
           >
             <div className="grid grid-cols-[1.8fr_1.4fr_1.1fr_1fr_1.1fr_1.1fr_0.7fr] gap-3 pb-3 border-b border-border mb-[1px]">
-              {["Deployment", "Project", "Branch", "Commit", "Environment", "Status", "Age"].map(h =>
+              {['Deployment', 'Project', 'Branch', 'Commit', 'Environment', 'Status', 'Age'].map((h) => (
                 <span key={h} className="text-[10px] uppercase tracking-[0.15em] text-sub">{h}</span>
-              )}
+              ))}
             </div>
             <div className="bg-border space-y-[1px]">
-              {deploymentRows.slice(0, 4).map(d => (
+              {deploymentRows.slice(0, 4).map((d) => (
                 <div key={d.id} className="grid grid-cols-[1.8fr_1.4fr_1.1fr_1fr_1.1fr_1.1fr_0.7fr] gap-3 py-3.5 px-0 bg-black items-center hover:bg-surface transition-colors duration-150 group">
                   <span className="text-[10px] text-muted">{d.id}</span>
                   <span className="text-[12px] text-white group-hover:text-cyan-primary transition-colors duration-150">{d.project}</span>
@@ -149,7 +149,7 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({ project, onBack, act
             </div>
           </motion.div>
         )}
-        {activeTab === "logs" && (
+        {activeTab === 'logs' && (
           <motion.div
             key="logs"
             initial={{ opacity: 0, y: 10 }}
@@ -159,7 +159,7 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({ project, onBack, act
             className="border border-border"
           >
             {logRows.map((l, i) => (
-              <div key={i} className={`flex gap-6 p-2.5 items-baseline ${i % 2 === 0 ? "bg-surface" : "bg-black"}`}>
+              <div key={i} className={`flex gap-6 p-2.5 items-baseline ${i % 2 === 0 ? 'bg-surface' : 'bg-black'}`}>
                 <span className="text-[11px] text-neutral-600 shrink-0 w-[110px]">{l.t}</span>
                 <span className={`text-[10px] uppercase tracking-[0.12em] shrink-0 w-11 ${l.level === 'ERROR' ? 'text-red-500' : l.level === 'WARN' ? 'text-amber-500' : 'text-cyan-primary'}`}>
                   {l.level}
@@ -169,7 +169,7 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({ project, onBack, act
             ))}
           </motion.div>
         )}
-        {activeTab === "settings" && (
+        {activeTab === 'settings' && (
           <motion.div
             key="settings"
             initial={{ opacity: 0, y: 10 }}
@@ -178,9 +178,9 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({ project, onBack, act
             transition={{ duration: 0.2 }}
             className="max-w-[460px] flex flex-col gap-6"
           >
-            <TextInput label="Project Name" defaultValue="Core Platform" />
-            <TextInput label="Domain" defaultValue="core-platform-v2.lecrev.app" />
-            <SelectInput label="Region" options={["LHR (London)", "IAD (Virginia)", "SIN (Singapore)", "FRA (Frankfurt)"]} />
+            <TextInput label="Project Name" defaultValue={p.name} />
+            <TextInput label="Domain" defaultValue={p.url} />
+            <SelectInput label="Region" options={['ap-south-1', 'ap-south-2', 'ap-southeast-1']} />
             <div className="flex justify-end pt-2">
               <CyanBtn>Save Changes</CyanBtn>
             </div>
