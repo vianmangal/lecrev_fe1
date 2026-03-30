@@ -1,53 +1,226 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { AlertTriangle, CheckCircle2, LoaderCircle, TerminalSquare } from 'lucide-react';
 import { CyanBtn, GhostBtn } from '../UI';
-import { LiveDeploymentRecord } from '../../api';
+import {
+  ApiConnection,
+  BuildJob,
+  ExecutionJob,
+  FunctionVersion,
+  HTTPTrigger,
+  LiveDeploymentRecord,
+  createHTTPTrigger,
+  getBuildJob,
+  getBuildJobLogs,
+  getFunctionVersion,
+  getJob,
+  getJobLogs,
+  getJobOutput,
+  listHTTPTriggers,
+  sleep,
+} from '../../api';
 
 export function DeploySuccess({
+  connection,
   deploymentId,
+  versionId,
+  buildJobId,
   record,
   onReset,
   onViewDeployments,
 }: {
+  connection: ApiConnection;
   deploymentId: string;
+  versionId: string;
+  buildJobId?: string;
   record: LiveDeploymentRecord | null;
   onReset: () => void;
   onViewDeployments: () => void;
 }) {
+  const [version, setVersion] = useState<FunctionVersion | undefined>(record?.version);
+  const [buildJob, setBuildJob] = useState<BuildJob | undefined>(record?.buildJob);
+  const [job, setJob] = useState<ExecutionJob | undefined>(record?.job);
+  const [buildLogs, setBuildLogs] = useState<string | undefined>(record?.buildLogs);
+  const [jobLogs, setJobLogs] = useState<string | undefined>(record?.jobLogs);
+  const [jobOutput, setJobOutput] = useState<unknown>(record?.jobOutput);
+  const [functionURL, setFunctionURL] = useState<HTTPTrigger | undefined>(record?.functionURLs?.[0]);
+  const [monitorError, setMonitorError] = useState<string | null>(record?.error ?? null);
+
+  useEffect(() => {
+    if (record?.version) {
+      setVersion(record.version);
+    }
+    if (record?.buildJob) {
+      setBuildJob(record.buildJob);
+    }
+    if (record?.job) {
+      setJob(record.job);
+    }
+    if (record?.buildLogs) {
+      setBuildLogs(record.buildLogs);
+    }
+    if (record?.jobLogs) {
+      setJobLogs(record.jobLogs);
+    }
+    if (record?.jobOutput !== undefined) {
+      setJobOutput(record.jobOutput);
+    }
+    if (record?.functionURLs?.[0]) {
+      setFunctionURL(record.functionURLs[0]);
+    }
+    if (record?.error) {
+      setMonitorError(record.error);
+    }
+  }, [record]);
+
+  useEffect(() => {
+    if (!versionId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      let activeBuildJobId = buildJobId ?? record?.buildJob?.id;
+      let activeJobId = record?.job?.id;
+      let triggerAttempted = false;
+
+      while (!cancelled) {
+        try {
+          const nextVersion = await getFunctionVersion(connection, versionId);
+          if (cancelled) {
+            return;
+          }
+          setVersion(nextVersion);
+          activeBuildJobId = activeBuildJobId ?? nextVersion.buildJobId;
+          let nextBuildState: BuildJob | undefined;
+          let nextJobState: ExecutionJob | undefined;
+          let nextFunctionURL: HTTPTrigger | undefined;
+
+          if (activeBuildJobId) {
+            nextBuildState = await getBuildJob(connection, activeBuildJobId);
+            if (cancelled) {
+              return;
+            }
+            setBuildJob(nextBuildState);
+            const nextBuildLogs = await getBuildJobLogs(connection, activeBuildJobId).catch(() => undefined);
+            if (!cancelled && nextBuildLogs) {
+              setBuildLogs(nextBuildLogs);
+            }
+          }
+
+          if (nextVersion.state === 'ready') {
+            const existingTriggers = await listHTTPTriggers(connection, versionId).catch(() => [] as HTTPTrigger[]);
+            if (cancelled) {
+              return;
+            }
+            if (existingTriggers.length > 0) {
+              nextFunctionURL = existingTriggers[0];
+              setFunctionURL(nextFunctionURL);
+            } else if (!triggerAttempted) {
+              triggerAttempted = true;
+              const created = await createHTTPTrigger(connection, versionId, {
+                description: 'Default function URL',
+                authMode: 'none',
+              }).catch(() => null);
+              if (!cancelled && created) {
+                nextFunctionURL = created;
+                setFunctionURL(created);
+              }
+            }
+          }
+
+          activeJobId = record?.job?.id ?? activeJobId;
+          if (activeJobId) {
+            nextJobState = await getJob(connection, activeJobId);
+            if (cancelled) {
+              return;
+            }
+            setJob(nextJobState);
+            const nextJobLogs = await getJobLogs(connection, activeJobId).catch(() => undefined);
+            if (!cancelled && nextJobLogs) {
+              setJobLogs(nextJobLogs);
+            }
+            if (nextJobState.state === 'succeeded') {
+              const output = await getJobOutput(connection, activeJobId).catch(() => undefined);
+              if (!cancelled && output !== undefined) {
+                setJobOutput(output);
+              }
+            }
+          }
+
+          const buildTerminal = !activeBuildJobId || nextBuildState?.state === 'succeeded' || nextBuildState?.state === 'failed';
+          const jobTerminal = !activeJobId || nextJobState?.state === 'succeeded' || nextJobState?.state === 'failed';
+          const versionTerminal = nextVersion.state === 'ready' || nextVersion.state === 'failed';
+
+          if (versionTerminal && buildTerminal && jobTerminal && (nextFunctionURL || nextVersion.state !== 'ready')) {
+            return;
+          }
+        } catch (err) {
+          if (!cancelled) {
+            setMonitorError(err instanceof Error ? err.message : 'Unable to monitor deployment.');
+          }
+          return;
+        }
+
+        await sleep(1200);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [buildJobId, connection, record, versionId]);
+
+  const effectiveVersion = version ?? record?.version;
+  const effectiveBuildJob = buildJob ?? record?.buildJob;
+  const effectiveJob = job ?? record?.job;
+  const effectiveError = monitorError ?? record?.error ?? null;
+
   const hasFailed = Boolean(
-    record?.error ||
-    record?.buildJob?.state === 'failed' ||
-    record?.version.state === 'failed' ||
-    record?.job?.state === 'failed',
+    effectiveError ||
+    effectiveBuildJob?.state === 'failed' ||
+    effectiveVersion?.state === 'failed' ||
+    effectiveJob?.state === 'failed',
   );
-  const isActive = record?.job?.state === 'succeeded';
+  const isActive = effectiveJob?.state === 'succeeded';
   const isRunning = !hasFailed && !isActive;
 
   const statusLabel = hasFailed
     ? 'Deployment Failed'
     : isActive
       ? 'Deployment Active'
-      : record?.job
+      : effectiveJob
         ? 'Executing Function'
-        : record?.buildJob || record?.version.state === 'building'
+        : effectiveBuildJob || effectiveVersion?.state === 'building'
           ? 'Building Deployment'
           : 'Deployment Queued';
 
-  const latestLogs = record?.jobLogs?.trim() || record?.buildLogs?.trim() || record?.error || '';
-  const logTitle = record?.jobLogs?.trim()
+  const latestLogs = jobLogs?.trim() || buildLogs?.trim() || effectiveError || '';
+  const logTitle = jobLogs?.trim()
     ? 'Execution Logs'
-    : record?.buildLogs?.trim()
+    : buildLogs?.trim()
       ? 'Build Logs'
-      : record?.error
+      : effectiveError
         ? 'Error'
         : '';
 
   const statusRows = [
-    ['Build', record?.buildJob?.state ?? 'queued'],
-    ['Version', record?.version.state ?? 'queued'],
-    ['Execution', record?.job?.state ?? 'waiting'],
+    ['Build', effectiveBuildJob?.state ?? 'queued'],
+    ['Version', effectiveVersion?.state ?? 'queued'],
+    ['Execution', effectiveJob?.state ?? 'waiting'],
   ];
+
+  const formattedOutput = useMemo(() => {
+    if (jobOutput === undefined) {
+      return '';
+    }
+    try {
+      return JSON.stringify(jobOutput, null, 2);
+    } catch {
+      return String(jobOutput);
+    }
+  }, [jobOutput]);
 
   return (
     <motion.div
@@ -71,12 +244,43 @@ export function DeploySuccess({
           ))}
         </div>
 
-        {record?.job?.result?.latencyMs ? (
+        {effectiveJob?.result?.latencyMs ? (
           <div className="mt-4 pt-4 border-t border-border">
             <p className="text-[10px] uppercase tracking-[0.15em] text-sub mb-1.5">Latency</p>
-            <p className="text-[12px]">{record.job.result.latencyMs} ms</p>
+            <p className="text-[12px]">{effectiveJob.result.latencyMs} ms</p>
           </div>
         ) : null}
+
+        <div className="mt-4 pt-4 border-t border-border">
+          <p className="text-[10px] uppercase tracking-[0.15em] text-sub mb-1.5">Function URL</p>
+          {functionURL ? (
+            <div className="flex flex-col gap-3">
+              <p className="text-[12px] break-all">{functionURL.url}</p>
+              <div className="flex flex-wrap gap-2">
+                <GhostBtn
+                  small
+                  onClick={() => {
+                    window.navigator.clipboard.writeText(functionURL.url).catch(() => undefined);
+                  }}
+                >
+                  Copy URL
+                </GhostBtn>
+                <GhostBtn
+                  small
+                  onClick={() => {
+                    window.open(functionURL.url, '_blank', 'noopener,noreferrer');
+                  }}
+                >
+                  Open URL
+                </GhostBtn>
+              </div>
+            </div>
+          ) : (
+            <p className="text-[11px] text-sub">
+              {effectiveVersion?.state === 'ready' ? 'Generating function URL…' : 'Function URL will be created once the build is ready.'}
+            </p>
+          )}
+        </div>
 
         {latestLogs ? (
           <div className="mt-4 pt-4 border-t border-border">
@@ -93,6 +297,18 @@ export function DeploySuccess({
             Waiting for build or execution logs…
           </div>
         )}
+
+        {formattedOutput ? (
+          <div className="mt-4 pt-4 border-t border-border">
+            <div className="flex items-center gap-2 mb-3 text-sub text-[10px] uppercase tracking-[0.15em]">
+              <TerminalSquare size={12} />
+              <span>Function Output</span>
+            </div>
+            <pre className="max-h-[220px] overflow-auto bg-black/50 border border-border p-4 text-[11px] leading-5 text-neutral-200 whitespace-pre-wrap break-all">
+              {formattedOutput}
+            </pre>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3 mt-2 w-full sm:w-auto">

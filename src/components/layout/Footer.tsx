@@ -1,5 +1,5 @@
 import React from 'react';
-import { Cpu, Globe, Zap } from 'lucide-react';
+import { Globe } from 'lucide-react';
 
 interface FooterProps {
   integrationError: string | null;
@@ -19,11 +19,10 @@ export function Footer({ integrationError, githubConfigured, availableRegions }:
           {githubConfigured ? 'AUTH: GitHub Ready' : 'AUTH: Optional'}
         </span>
         <span className="flex items-center gap-1"><Globe size={10} /> {availableRegions[0] || 'ap-south-1'}</span>
-        <span className="flex items-center gap-1"><Zap size={10} /> 200ms</span>
+        <span>{availableRegions.length} regions</span>
       </div>
       <div className="flex gap-6 text-[9px] uppercase tracking-[0.15em] text-muted">
         <span>{integrationError ? 'API: Degraded' : 'API: Connected'}</span>
-        <span className="flex items-center gap-1"><Cpu size={10} /> 8%</span>
         <span>{new Date().toLocaleTimeString('en-GB', { hour12: false })}</span>
       </div>
     </footer>

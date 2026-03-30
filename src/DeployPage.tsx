@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { DeployRequestInput, LiveDeploymentRecord } from './api';
+import { ApiConnection, DeployRequestInput, LiveDeploymentRecord } from './api';
 import { DeployMode, DeployModePicker } from './components/deploy/DeployModePicker';
 import { FileDeployForm } from './components/deploy/FileDeployForm';
 import { FunctionDeployForm } from './components/deploy/FunctionDeployForm';
@@ -14,11 +14,12 @@ interface DeployPageProps {
   defaultProjectId: string;
   regionOptions: string[];
   liveDeployments: LiveDeploymentRecord[];
+  connection: ApiConnection;
 }
 
 const DEFAULT_HANDLER = "export async function handler(event, context) {\n  return { ok: true, echo: event, region: context.region, hostId: context.hostId };\n}\n";
 
-export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaultProjectId, regionOptions, liveDeployments }) => {
+export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaultProjectId, regionOptions, liveDeployments, connection }) => {
   const [mode, setMode] = useState<DeployMode | null>(null);
   const [dragging, setDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -159,6 +160,9 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
     return (
       <DeploySuccess
         deploymentId={deployInfo?.buildJobId || deployInfo?.versionId || 'deployment'}
+        connection={connection}
+        versionId={deployInfo?.versionId || ''}
+        buildJobId={deployInfo?.buildJobId}
         record={liveDeployment}
         onReset={reset}
         onViewDeployments={onBack}

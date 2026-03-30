@@ -5,6 +5,7 @@ import { DetailScreen } from './DetailScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { DeployPage } from './DeployPage';
 import { AuthScreen } from './AuthScreen';
+import { HTTPTrigger } from './api';
 import { Project } from './types';
 import { useDashboardData } from './hooks/useDashboardData';
 import { useDetailLogs } from './hooks/useDetailLogs';
@@ -35,11 +36,16 @@ export default function App() {
     projectRows,
     deploymentRows,
     deploymentIDsByProject,
+    ensureFunctionURL,
     handleDeploy,
     handleSignOut,
+    loadFunctionURLs,
     saveConnection,
     refetchSession,
   } = useDashboardData();
+  const [detailFunctionURLs, setDetailFunctionURLs] = useState<HTTPTrigger[]>([]);
+  const [functionURLBusy, setFunctionURLBusy] = useState(false);
+  const [functionURLError, setFunctionURLError] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeUser) {
@@ -78,6 +84,59 @@ export default function App() {
 
   const activeDetailDeploymentID = detailDeployments[0]?.id;
   const detailLogs = useDetailLogs(connection, activeTab, activeDetailDeploymentID, liveDeployments);
+
+  useEffect(() => {
+    if (!activeDetailDeploymentID) {
+      setDetailFunctionURLs([]);
+      setFunctionURLError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setFunctionURLBusy(true);
+    setFunctionURLError(null);
+
+    void loadFunctionURLs(connection, activeDetailDeploymentID)
+      .then((urls) => {
+        if (!cancelled) {
+          setDetailFunctionURLs(urls);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setDetailFunctionURLs([]);
+          setFunctionURLError(err instanceof Error ? err.message : 'Unable to load function URL.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setFunctionURLBusy(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeDetailDeploymentID, connection, loadFunctionURLs]);
+
+  const handleCreateFunctionURL = async () => {
+    if (!activeDetailDeploymentID) {
+      return;
+    }
+    setFunctionURLBusy(true);
+    setFunctionURLError(null);
+    try {
+      const created = await ensureFunctionURL(connection, activeDetailDeploymentID);
+      if (created) {
+        const urls = await loadFunctionURLs(connection, activeDetailDeploymentID);
+        setDetailFunctionURLs(urls);
+      }
+    } catch (err) {
+      setFunctionURLError(err instanceof Error ? err.message : 'Unable to create function URL.');
+    } finally {
+      setFunctionURLBusy(false);
+    }
+  };
 
   const go = (nextScreen: ScreenName) => {
     setScreen(nextScreen);
@@ -148,6 +207,12 @@ export default function App() {
                 setActiveTab={setActiveTab}
                 deployments={detailDeployments}
                 logs={detailLogs}
+                functionURLs={detailFunctionURLs}
+                functionURLBusy={functionURLBusy}
+                functionURLError={functionURLError}
+                onCreateFunctionURL={() => {
+                  void handleCreateFunctionURL();
+                }}
               />
             )}
             {screen === 'settings' && (
@@ -168,6 +233,7 @@ export default function App() {
                 defaultProjectId={connection.projectId}
                 regionOptions={availableRegions}
                 liveDeployments={liveDeployments}
+                connection={connection}
               />
             )}
           </AnimatePresence>

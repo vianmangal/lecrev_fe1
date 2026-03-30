@@ -208,6 +208,7 @@ export interface LiveDeploymentRecord {
   job?: ExecutionJob;
   jobLogs?: string;
   jobOutput?: unknown;
+  functionURLs?: HTTPTrigger[];
   error?: string;
 }
 

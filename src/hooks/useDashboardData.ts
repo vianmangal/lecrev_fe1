@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { DEPLOYS, PROJECTS } from '../constants';
 import { authClient } from '../lib/auth-client';
 import {
   ApiConnection,
   DeployRequestInput,
   DeploymentSummary,
+  HTTPTrigger,
   LiveDeploymentRecord,
   ProjectRecord,
+  createHTTPTrigger,
   createFunctionVersion,
   getBuildJob,
   getBuildJobLogs,
@@ -15,6 +16,7 @@ import {
   getJobLogs,
   getJobOutput,
   invokeFunction,
+  listHTTPTriggers,
   listDeployments,
   listProjects,
   listRegions,
@@ -28,7 +30,6 @@ import {
   FALLBACK_REGIONS,
   buildProjectRow,
   loadConnection,
-  mergeDeploymentRows,
   persistConnection,
 } from '../lib/dashboard-utils';
 
@@ -127,6 +128,33 @@ export function useDashboardData() {
     );
   }, []);
 
+  const loadFunctionURLs = useCallback(async (conn: ApiConnection, versionId: string): Promise<HTTPTrigger[]> => {
+    const triggers = await listHTTPTriggers(conn, versionId);
+    patchLiveDeployment(versionId, (record) => ({
+      ...record,
+      functionURLs: triggers,
+    }));
+    return triggers;
+  }, [patchLiveDeployment]);
+
+  const ensureFunctionURL = useCallback(async (conn: ApiConnection, versionId: string): Promise<HTTPTrigger | null> => {
+    const existing = await loadFunctionURLs(conn, versionId).catch(() => [] as HTTPTrigger[]);
+    if (existing.length > 0) {
+      return existing[0];
+    }
+
+    const created = await createHTTPTrigger(conn, versionId, {
+      description: 'Default function URL',
+      authMode: 'none',
+    });
+
+    patchLiveDeployment(versionId, (record) => ({
+      ...record,
+      functionURLs: [created],
+    }));
+    return created;
+  }, [loadFunctionURLs, patchLiveDeployment]);
+
   const trackExecutionLifecycle = useCallback(async (conn: ApiConnection, versionId: string, jobId: string) => {
     try {
       while (true) {
@@ -218,6 +246,8 @@ export function useDashboardData() {
         return;
       }
 
+      await ensureFunctionURL(conn, versionId).catch(() => null);
+
       await startExecution(conn, versionId);
     } catch (err) {
       patchLiveDeployment(versionId, (record) => ({
@@ -249,6 +279,7 @@ export function useDashboardData() {
       if (version.buildJobId) {
         void trackBuildLifecycle(conn, version.id, version.buildJobId);
       } else if (version.state === 'ready') {
+        void ensureFunctionURL(conn, version.id).catch(() => undefined);
         void startExecution(conn, version.id);
       }
 
@@ -263,9 +294,28 @@ export function useDashboardData() {
     }
   }, [connection, refreshCatalog, startExecution, trackBuildLifecycle]);
 
-  const deploymentRows = useMemo<Deployment[]>(() => (
-    mergeDeploymentRows(backendDeployments, liveDeployments, DEPLOYS, summaryToDeploymentRow, toDeploymentRow)
-  ), [backendDeployments, liveDeployments]);
+  const deploymentRows = useMemo<Deployment[]>(() => {
+    const map = new Map<string, Deployment>();
+    const order: string[] = [];
+
+    for (const summary of backendDeployments) {
+      const row = summaryToDeploymentRow(summary);
+      order.push(row.id);
+      map.set(row.id, row);
+    }
+
+    for (const record of liveDeployments) {
+      const row = toDeploymentRow(record);
+      if (!map.has(row.id)) {
+        order.unshift(row.id);
+      }
+      map.set(row.id, row);
+    }
+
+    return order
+      .map((id) => map.get(id))
+      .filter((row): row is Deployment => Boolean(row));
+  }, [backendDeployments, liveDeployments]);
 
   const deploymentIDsByProject = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -326,12 +376,6 @@ export function useDashboardData() {
       }
     }
 
-    for (const project of PROJECTS) {
-      if (!map.has(project.id)) {
-        map.set(project.id, project);
-      }
-    }
-
     return Array.from(map.values());
   }, [backendDeployments, backendProjects, liveDeployments]);
 
@@ -365,6 +409,8 @@ export function useDashboardData() {
     projectRows,
     deploymentRows,
     deploymentIDsByProject,
+    ensureFunctionURL,
+    loadFunctionURLs,
     handleDeploy,
     handleSignOut,
     refreshCatalog,
