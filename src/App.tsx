@@ -204,20 +204,6 @@ export default function App() {
 
             <main className="flex-1 overflow-hidden relative flex flex-col">
               <AnimatePresence mode="wait">
-                {isConnectionPending && (
-                  <motion.div
-                    key="provisioning"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="flex-1 flex items-center justify-center p-8"
-                  >
-                    <div className="border border-border bg-surface/70 px-6 py-5 text-center">
-                      <p className="text-[10px] uppercase tracking-[0.15em] text-sub">Provisioning Workspace</p>
-                      <p className="mt-3 text-[12px] text-white">Establishing your tenant-scoped Lecrev connection.</p>
-                    </div>
-                  </motion.div>
-                )}
                 {!isConnectionPending && screen === 'projects' && (
                   <ProjectsScreen
                     key="projects"
