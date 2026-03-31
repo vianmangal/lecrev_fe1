@@ -33,6 +33,9 @@ const publicAPIBaseURL = (process.env.LECREV_PUBLIC_API_URL ?? '').trim().replac
 const githubStatusContext = (process.env.GITHUB_STATUS_CONTEXT ?? 'lecrev/deploy').trim() || 'lecrev/deploy';
 
 const isGitHubAppReady = Boolean(githubAppID && githubPrivateKeyPath);
+const DEFAULT_BRANCH_ALIASES = new Set(['main', 'master']);
+
+class GitHubAutomationValidationError extends Error {}
 
 interface GitHubRepositoryRefPayload {
   full_name?: string;
@@ -280,17 +283,66 @@ async function buildAuthenticatedGitURL(input: { installationId?: number | null;
   return addInstallationTokenToGitURL(canonical, token);
 }
 
-async function resolveCommitSHA(installationId: number, owner: string, repo: string, gitRef: string): Promise<string> {
+async function getRepositoryDefaultBranch(installationId: number, owner: string, repo: string): Promise<string | null> {
   const token = await createInstallationToken(installationId);
-  const payload = await githubRequest<{ sha?: string }>(
-    `/repos/${owner}/${repo}/commits/${encodeURIComponent(gitRef)}`,
+  const payload = await githubRequest<{ default_branch?: string }>(
+    `/repos/${owner}/${repo}`,
     {},
     token,
   );
-  if (!payload.sha) {
-    throw new Error(`Unable to resolve commit SHA for ${owner}/${repo}@${gitRef}.`);
+  return payload.default_branch?.trim() || null;
+}
+
+async function canonicalizeConfiguredGitRef(installationId: number, owner: string, repo: string, gitRef: string): Promise<string> {
+  const requestedRef = gitRef.trim();
+  const defaultBranch = await getRepositoryDefaultBranch(installationId, owner, repo);
+  if (!requestedRef) {
+    if (!defaultBranch) {
+      throw new GitHubAutomationValidationError(`No branch or ref was provided for ${owner}/${repo}, and the default branch could not be resolved.`);
+    }
+    return defaultBranch;
   }
-  return payload.sha;
+
+  if (
+    defaultBranch
+    && requestedRef !== defaultBranch
+    && DEFAULT_BRANCH_ALIASES.has(requestedRef)
+    && DEFAULT_BRANCH_ALIASES.has(defaultBranch)
+  ) {
+    return defaultBranch;
+  }
+
+  return requestedRef;
+}
+
+async function resolveCommitSHA(installationId: number, owner: string, repo: string, gitRef: string): Promise<string> {
+  const token = await createInstallationToken(installationId);
+  try {
+    const payload = await githubRequest<{ sha?: string }>(
+      `/repos/${owner}/${repo}/commits/${encodeURIComponent(gitRef)}`,
+      {},
+      token,
+    );
+    if (!payload.sha) {
+      throw new GitHubAutomationValidationError(`Unable to resolve commit SHA for ${owner}/${repo}@${gitRef}.`);
+    }
+    return payload.sha;
+  } catch (error) {
+    const defaultBranchPayload = await githubRequest<{ default_branch?: string }>(
+      `/repos/${owner}/${repo}`,
+      {},
+      token,
+    ).catch(() => ({ default_branch: undefined }));
+    const defaultBranch = defaultBranchPayload.default_branch?.trim();
+    if (error instanceof GitHubAutomationValidationError) {
+      throw error;
+    }
+    throw new GitHubAutomationValidationError(
+      defaultBranch
+        ? `Git ref '${gitRef}' was not found for ${owner}/${repo}. The default branch is '${defaultBranch}'.`
+        : `Git ref '${gitRef}' was not found for ${owner}/${repo}.`,
+    );
+  }
 }
 
 function connectionForUser(userId: string): LecrevServerConnection {
@@ -427,6 +479,7 @@ async function createDeploymentRun(input: {
   repoFullName: string;
   gitUrl: string;
   gitRef: string;
+  subPath?: string;
   installationId: number;
   commitSha: string;
   eventType: 'push' | 'pull_request';
@@ -443,6 +496,8 @@ async function createDeploymentRun(input: {
     environment: input.environment,
     region: input.binding.region,
     entrypoint: input.binding.entrypoint,
+    subPath: input.binding.subPath,
+    deliveryKind: input.binding.entrypoint.trim() === '' ? 'website' : 'function',
     envVars: input.binding.envVars,
     gitUrl: await buildAuthenticatedGitURL({
       installationId: input.installationId,
@@ -473,6 +528,7 @@ async function createDeploymentRun(input: {
       repoFullName: input.binding.repoFullName,
       gitUrl: input.binding.gitUrl,
       gitRef: input.binding.gitRef,
+      subPath: input.binding.subPath,
       entrypoint: input.binding.entrypoint,
       envVars: input.binding.envVars,
       projectId: input.binding.projectId,
@@ -915,6 +971,7 @@ export function createGitHubDeploymentRouter() {
       repoFullName: string;
       gitUrl: string;
       gitRef: string;
+      subPath?: string;
       entrypoint: string;
       envVars?: Record<string, string>;
       projectId: string;
@@ -963,6 +1020,13 @@ export function createGitHubDeploymentRouter() {
       const functionName = sanitizeFunctionName(body.functionName);
       const environment = body.environment ?? 'production';
       const region = body.region?.trim() || 'ap-south-1';
+      const configuredGitRef = await canonicalizeConfiguredGitRef(
+        authorized.installationId,
+        authorized.repository.owner,
+        authorized.repository.repo,
+        body.gitRef,
+      );
+
       const binding = upsertGitHubRepoBinding({
         userId: user.id,
         tenantId: userConnection.tenantId,
@@ -971,7 +1035,8 @@ export function createGitHubDeploymentRouter() {
         repo: authorized.repository.repo,
         repoFullName: authorized.repository.fullName,
         gitUrl: authorized.repository.gitUrl ?? body.gitUrl ?? canonicalGitURL(authorized.repository.owner, authorized.repository.repo),
-        gitRef: body.gitRef,
+        gitRef: configuredGitRef,
+        subPath: body.subPath?.trim() ?? '',
         entrypoint: body.entrypoint?.trim() ?? '',
         envVars: body.envVars,
         projectId,
@@ -989,7 +1054,7 @@ export function createGitHubDeploymentRouter() {
           authorized.installationId,
           authorized.repository.owner,
           authorized.repository.repo,
-          body.gitRef,
+          configuredGitRef,
         );
         const statusContext = statusContextForRun({ eventType: 'push', environment });
         await postCommitStatusBestEffort(binding.installationId, binding.owner, binding.repo, commitSha, {
@@ -1025,7 +1090,7 @@ export function createGitHubDeploymentRouter() {
       res.status(201).json({ binding });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to register GitHub deployment binding.';
-      res.status(502).json({ error: message });
+      res.status(error instanceof GitHubAutomationValidationError ? 400 : 502).json({ error: message });
     }
   });
 

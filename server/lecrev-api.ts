@@ -41,6 +41,9 @@ export interface CreateGitFunctionVersionInput {
   environment: 'production' | 'staging' | 'preview';
   region: string;
   entrypoint: string;
+  subPath?: string;
+  deliveryKind?: 'function' | 'website';
+  framework?: string;
   envVars?: Record<string, string>;
   gitUrl: string;
   gitRef: string;
@@ -95,8 +98,11 @@ export async function createGitFunctionVersion(connection: LecrevServerConnectio
       type: 'git',
       gitUrl: input.gitUrl,
       gitRef: input.gitRef,
+      subPath: input.subPath,
       metadata: {
         environment: input.environment,
+        deliveryKind: input.deliveryKind,
+        framework: input.framework,
       },
     },
   });

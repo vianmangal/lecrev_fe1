@@ -408,6 +408,7 @@ export function useDashboardData() {
     repoFullName: string;
     gitUrl: string;
     gitRef: string;
+    subPath?: string;
     entrypoint: string;
     projectId: string;
     functionName: string;
@@ -432,6 +433,7 @@ export function useDashboardData() {
         repoFullName: input.repoFullName,
         gitUrl: input.gitUrl,
         gitRef: input.gitRef,
+        subPath: input.subPath,
         entrypoint: input.entrypoint,
         projectId: input.projectId,
         functionName: input.functionName,

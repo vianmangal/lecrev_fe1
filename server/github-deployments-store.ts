@@ -25,6 +25,7 @@ const createBindingsTableSQL = `
     repo_full_name text not null,
     git_url text not null,
     git_ref text not null,
+    sub_path text not null default '',
     entrypoint text not null,
     env_vars text not null default '{}',
     project_id text not null,
@@ -95,10 +96,11 @@ function migrateBindingsTable(): void {
   }
 
   const columns = columnNames('github_repo_bindings');
-  if (columns.has('user_id') && columns.has('tenant_id') && columns.has('env_vars')) {
+  if (columns.has('user_id') && columns.has('tenant_id') && columns.has('env_vars') && columns.has('sub_path')) {
     return;
   }
   const envVarsExpr = columns.has('env_vars') ? 'env_vars' : `'{}'`;
+  const subPathExpr = columns.has('sub_path') ? 'sub_path' : `''`;
 
   db.exec(`
     pragma foreign_keys = off;
@@ -114,6 +116,7 @@ function migrateBindingsTable(): void {
       repo_full_name,
       git_url,
       git_ref,
+      sub_path,
       entrypoint,
       env_vars,
       project_id,
@@ -137,6 +140,7 @@ function migrateBindingsTable(): void {
       repo_full_name,
       git_url,
       git_ref,
+      ${subPathExpr},
       entrypoint,
       ${envVarsExpr},
       project_id,
@@ -289,6 +293,7 @@ export interface GitHubRepoBinding {
   repoFullName: string;
   gitUrl: string;
   gitRef: string;
+  subPath?: string;
   entrypoint: string;
   envVars: Record<string, string>;
   projectId: string;
@@ -312,6 +317,7 @@ export interface UpsertGitHubRepoBindingInput {
   repoFullName: string;
   gitUrl: string;
   gitRef: string;
+  subPath?: string;
   entrypoint: string;
   envVars?: Record<string, string>;
   projectId: string;
@@ -393,6 +399,7 @@ function rowToBinding(row: Record<string, unknown>): GitHubRepoBinding {
     repoFullName: String(row.repo_full_name),
     gitUrl: String(row.git_url),
     gitRef: String(row.git_ref),
+    subPath: row.sub_path ? String(row.sub_path) : undefined,
     entrypoint: String(row.entrypoint),
     envVars: parseEnvVars(row.env_vars),
     projectId: String(row.project_id),
@@ -505,6 +512,7 @@ export function upsertGitHubRepoBinding(input: UpsertGitHubRepoBindingInput): Gi
       set tenant_id = ?,
           repo_full_name = ?,
           git_url = ?,
+          sub_path = ?,
           entrypoint = ?,
           env_vars = ?,
           environment = ?,
@@ -519,6 +527,7 @@ export function upsertGitHubRepoBinding(input: UpsertGitHubRepoBindingInput): Gi
       input.tenantId,
       input.repoFullName,
       input.gitUrl,
+      input.subPath?.trim() ?? '',
       input.entrypoint,
       envVars,
       input.environment,
@@ -547,6 +556,7 @@ export function upsertGitHubRepoBinding(input: UpsertGitHubRepoBindingInput): Gi
       repo_full_name,
       git_url,
       git_ref,
+      sub_path,
       entrypoint,
       env_vars,
       project_id,
@@ -559,7 +569,7 @@ export function upsertGitHubRepoBinding(input: UpsertGitHubRepoBindingInput): Gi
       last_commit_sha,
       created_at,
       updated_at
-    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.userId,
@@ -570,6 +580,7 @@ export function upsertGitHubRepoBinding(input: UpsertGitHubRepoBindingInput): Gi
     input.repoFullName,
     input.gitUrl,
     input.gitRef,
+    input.subPath?.trim() ?? '',
     input.entrypoint,
     envVars,
     input.projectId,

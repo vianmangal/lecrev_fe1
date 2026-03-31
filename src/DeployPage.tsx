@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Upload, Code, Terminal } from 'lucide-react';
 import { ApiConnection, DeployRequestInput, LiveDeploymentRecord, ProjectRecord } from './api';
 import { DeployMode, DeployModePicker } from './components/deploy/DeployModePicker';
 import { EnvVarsEditor } from './components/deploy/EnvVarsEditor';
@@ -9,6 +10,24 @@ import { GitHubDeployForm, GitHubDeploySubmission } from './components/deploy/Gi
 import { DeploySuccess } from './components/deploy/DeploySuccess';
 import { CyanBtn, GhostBtn, SelectInput, TextInput } from './components/UI';
 import { parseEnvVarsInput } from './lib/env-vars';
+
+const MODE_META: Record<DeployMode, { label: string; description: string; icon: React.ReactNode }> = {
+  file: {
+    label: 'Upload File',
+    description: 'Deploy a ZIP, tarball, or single file directly to your project.',
+    icon: <Upload size={18} strokeWidth={1.5} />,
+  },
+  code: {
+    label: 'GitHub Import',
+    description: 'Clone a repository, build it, and deploy an immutable artifact via git.',
+    icon: <Code size={18} strokeWidth={1.5} />,
+  },
+  function: {
+    label: 'Serverless Function',
+    description: 'Write and deploy a function directly from the in-browser editor.',
+    icon: <Terminal size={18} strokeWidth={1.5} />,
+  },
+};
 
 interface DeployPageProps {
   onBack: () => void;
@@ -170,6 +189,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({
         repoFullName: submission.repoFullName,
         gitUrl: submission.gitUrl,
         gitRef: submission.gitRef,
+        subPath: submission.subPath,
         entrypoint: submission.entrypoint,
         projectId: cleanedProject,
         functionName: sanitizeName(submission.functionName || submission.repoFullName.replace(/\//g, '-')),
@@ -312,73 +332,70 @@ export const DeployPage: React.FC<DeployPageProps> = ({
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
-            className="max-w-[640px]"
+            className="max-w-[680px]"
           >
-            <div className="flex items-center gap-2 mb-10">
-              <button onClick={() => setMode(null)} className="text-[10px] uppercase tracking-widest text-sub bg-transparent border-none cursor-pointer hover:text-white transition-colors">← Back</button>
-              <span className="text-[10px] text-muted">/ {mode === 'file' ? 'Upload File' : mode === 'code' ? 'GitHub Import' : 'Serverless Function'}</span>
+            {/* Mode header */}
+            <div className="flex items-start gap-4 mb-8 pb-6 border-b border-border">
+              <button
+                onClick={() => setMode(null)}
+                className="text-[9px] uppercase tracking-[0.15em] text-sub bg-transparent border-none cursor-pointer hover:text-white transition-colors mt-1 shrink-0"
+              >
+                ← Change
+              </button>
+              <div className="flex items-center gap-3">
+                <span className="text-cyan-primary">{MODE_META[mode].icon}</span>
+                <div>
+                  <p className="text-[13px] text-white">{MODE_META[mode].label}</p>
+                  <p className="text-[11px] text-sub mt-0.5">{MODE_META[mode].description}</p>
+                </div>
+              </div>
             </div>
 
             {mode === 'file' && (
-              <>
-                <EnvVarsEditor value={envVarsText} onChange={setEnvVarsText} disabled={isSubmitting} />
-                <FileDeployForm
-                  file={file}
-                  dragging={dragging}
-                  error={error}
-                  region={region}
-                  regionOptions={regionOptions}
-                  isSubmitting={isSubmitting}
-                  onSelectFile={setFile}
-                  onSetDragging={setDragging}
-                  onRegionChange={setRegion}
-                  onDeploy={() => void handleDirectDeploy()}
-                  onCancel={() => {
-                    setMode(null);
-                    setError(null);
-                  }}
-                />
-              </>
+              <FileDeployForm
+                file={file}
+                dragging={dragging}
+                error={error}
+                region={region}
+                regionOptions={regionOptions}
+                isSubmitting={isSubmitting}
+                onSelectFile={setFile}
+                onSetDragging={setDragging}
+                onRegionChange={setRegion}
+                onDeploy={() => void handleDirectDeploy()}
+                onCancel={() => { setMode(null); setError(null); }}
+                envVarsSlot={<EnvVarsEditor collapsible value={envVarsText} onChange={setEnvVarsText} disabled={isSubmitting} />}
+              />
             )}
 
             {mode === 'code' && (
-              <>
-                <EnvVarsEditor value={envVarsText} onChange={setEnvVarsText} disabled={isSubmitting} />
-                <GitHubDeployForm
-                  environment={environment}
-                  region={region}
-                  regionOptions={regionOptions}
-                  isSubmitting={isSubmitting}
-                  error={error}
-                  onEnvironmentChange={setEnvironment}
-                  onRegionChange={setRegion}
-                  onCancel={() => {
-                    setMode(null);
-                    setError(null);
-                  }}
-                  onDeploy={handleGitHubDeploy}
-                />
-              </>
+              <GitHubDeployForm
+                environment={environment}
+                region={region}
+                regionOptions={regionOptions}
+                isSubmitting={isSubmitting}
+                error={error}
+                onEnvironmentChange={setEnvironment}
+                onRegionChange={setRegion}
+                onCancel={() => { setMode(null); setError(null); }}
+                onDeploy={handleGitHubDeploy}
+                envVarsSlot={<EnvVarsEditor collapsible value={envVarsText} onChange={setEnvVarsText} disabled={isSubmitting} />}
+              />
             )}
 
             {mode === 'function' && (
-              <>
-                <EnvVarsEditor value={envVarsText} onChange={setEnvVarsText} disabled={isSubmitting} />
-                <FunctionDeployForm
-                  code={functionVal}
-                  error={error}
-                  region={region}
-                  regionOptions={regionOptions}
-                  isSubmitting={isSubmitting}
-                  onCodeChange={setFunctionVal}
-                  onRegionChange={setRegion}
-                  onDeploy={() => void handleDirectDeploy()}
-                  onCancel={() => {
-                    setMode(null);
-                    setError(null);
-                  }}
-                />
-              </>
+              <FunctionDeployForm
+                code={functionVal}
+                error={error}
+                region={region}
+                regionOptions={regionOptions}
+                isSubmitting={isSubmitting}
+                onCodeChange={setFunctionVal}
+                onRegionChange={setRegion}
+                onDeploy={() => void handleDirectDeploy()}
+                onCancel={() => { setMode(null); setError(null); }}
+                envVarsSlot={<EnvVarsEditor collapsible value={envVarsText} onChange={setEnvVarsText} disabled={isSubmitting} />}
+              />
             )}
           </motion.div>
         )}

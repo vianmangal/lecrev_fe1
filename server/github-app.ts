@@ -77,6 +77,14 @@ interface GitHubPackageManifest {
   devDependencies?: Record<string, string>;
 }
 
+interface GitHubWorkspaceInspection {
+  subPath: string;
+  packageManifest: GitHubPackageManifest | null;
+  tree: GitHubTreePayload['tree'];
+  framework?: string;
+  deliveryKind: 'function' | 'website';
+}
+
 class GitHubAPIError extends Error {
   status: number;
   body: string;
@@ -416,10 +424,40 @@ function hasNextWebsiteSurface(tree: GitHubTreePayload['tree']): boolean {
   });
 }
 
-async function maybeReadPackageManifest(owner: string, repo: string, ref: string, token: string): Promise<GitHubPackageManifest | null> {
+function workspaceTree(tree: GitHubTreePayload['tree'], subPath: string): GitHubTreePayload['tree'] {
+  const normalized = subPath.replace(/^\/+|\/+$/g, '');
+  if (!normalized) {
+    return tree;
+  }
+  const prefix = `${normalized}/`;
+  return (tree ?? [])
+    .filter((entry) => entry.path === normalized || entry.path.startsWith(prefix))
+    .map((entry) => ({
+      ...entry,
+      path: entry.path === normalized ? '' : entry.path.slice(prefix.length),
+    }))
+    .filter((entry) => entry.path !== '');
+}
+
+function packageManifestPaths(tree: GitHubTreePayload['tree']): string[] {
+  return uniqueStrings(
+    (tree ?? [])
+      .filter((entry) => entry.type === 'blob' && /(^|\/)package\.json$/.test(entry.path))
+      .map((entry) => entry.path),
+  ).sort((left, right) => {
+    const leftDepth = left.split('/').length;
+    const rightDepth = right.split('/').length;
+    if (leftDepth !== rightDepth) {
+      return leftDepth - rightDepth;
+    }
+    return left.localeCompare(right);
+  });
+}
+
+async function maybeReadPackageManifest(owner: string, repo: string, ref: string, token: string, packagePath = 'package.json'): Promise<GitHubPackageManifest | null> {
   try {
     const payload = await githubRequest<{ content?: string }>(
-      `/repos/${owner}/${repo}/contents/package.json?ref=${encodeURIComponent(ref)}`,
+      `/repos/${owner}/${repo}/contents/${packagePath}?ref=${encodeURIComponent(ref)}`,
       {},
       token,
     );
@@ -431,6 +469,44 @@ async function maybeReadPackageManifest(owner: string, repo: string, ref: string
   } catch {
     return null;
   }
+}
+
+async function inspectRepositoryWorkspace(
+  owner: string,
+  repo: string,
+  ref: string,
+  token: string,
+  tree: GitHubTreePayload['tree'],
+): Promise<GitHubWorkspaceInspection> {
+  const manifestPaths = packageManifestPaths(tree);
+  let fallbackManifest: GitHubPackageManifest | null = await maybeReadPackageManifest(owner, repo, ref, token);
+
+  for (const manifestPath of manifestPaths) {
+    const subPath = manifestPath === 'package.json' ? '' : manifestPath.replace(/\/package\.json$/, '');
+    const manifest = manifestPath === 'package.json'
+      ? fallbackManifest
+      : await maybeReadPackageManifest(owner, repo, ref, token, manifestPath);
+    const scopedTree = workspaceTree(tree, subPath);
+    if (isNextWorkspace(manifest) && hasNextWebsiteSurface(scopedTree)) {
+      return {
+        subPath,
+        packageManifest: manifest,
+        tree: scopedTree,
+        framework: 'nextjs',
+        deliveryKind: 'website',
+      };
+    }
+    if (!subPath) {
+      fallbackManifest = manifest;
+    }
+  }
+
+  return {
+    subPath: '',
+    packageManifest: fallbackManifest,
+    tree,
+    deliveryKind: 'function',
+  };
 }
 
 async function resolveAuthorizedGitHubContext(req: express.Request) {
@@ -622,18 +698,18 @@ export function createGitHubAppRouter() {
           {},
           token,
         );
-        const packageManifest = await maybeReadPackageManifest(req.params.owner, req.params.repo, ref, token);
-        const nextWebsite = isNextWorkspace(packageManifest) && hasNextWebsiteSurface(tree.tree);
-        const entrypointCandidates = deriveEntrypointCandidates(tree.tree, packageManifest);
+        const inspection = await inspectRepositoryWorkspace(req.params.owner, req.params.repo, ref, token, tree.tree);
+        const entrypointCandidates = deriveEntrypointCandidates(inspection.tree, inspection.packageManifest);
 
         return {
           repository: authorized.repository,
           ref,
+          subPath: inspection.subPath || undefined,
           entrypointCandidates,
-          suggestedEntrypoint: nextWebsite ? '' : (entrypointCandidates[0] ?? ''),
+          suggestedEntrypoint: inspection.deliveryKind === 'website' ? '' : (entrypointCandidates[0] ?? ''),
           suggestedFunctionName: authorized.repository.repo.replace(/[^a-zA-Z0-9-_]+/g, '-').toLowerCase(),
-          framework: nextWebsite ? 'nextjs' : undefined,
-          deliveryKind: nextWebsite ? 'website' : 'function',
+          framework: inspection.framework,
+          deliveryKind: inspection.deliveryKind,
         };
       });
       res.json(payload);

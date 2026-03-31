@@ -18,6 +18,7 @@ export interface GitHubDeploySubmission {
   repoFullName: string;
   gitUrl: string;
   gitRef: string;
+  subPath?: string;
   entrypoint: string;
   deliveryKind?: 'function' | 'website';
   framework?: string;
@@ -33,6 +34,16 @@ interface GitHubDeployFormProps {
   onRegionChange: (region: string) => void;
   onCancel: () => void;
   onDeploy: (request: GitHubDeploySubmission) => Promise<void>;
+  envVarsSlot?: React.ReactNode;
+}
+
+function SectionDivider({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 mt-8 mb-5">
+      <span className="text-[9px] uppercase tracking-[0.2em] text-muted shrink-0">{children}</span>
+      <div className="h-px flex-1 bg-border" />
+    </div>
+  );
 }
 
 export function GitHubDeployForm({
@@ -45,6 +56,7 @@ export function GitHubDeployForm({
   onRegionChange,
   onCancel,
   onDeploy,
+  envVarsSlot,
 }: GitHubDeployFormProps) {
   const [status, setStatus] = useState<GitHubAppStatus | null>(null);
   const [installations, setInstallations] = useState<GitHubInstallation[]>([]);
@@ -54,6 +66,7 @@ export function GitHubDeployForm({
   const [repoUrl, setRepoUrl] = useState('');
   const [repoFilter, setRepoFilter] = useState('');
   const [branch, setBranch] = useState('');
+  const [subPath, setSubPath] = useState('');
   const [entrypoint, setEntrypoint] = useState('');
   const [entrypointCandidates, setEntrypointCandidates] = useState<string[]>([]);
   const [functionName, setFunctionName] = useState('');
@@ -183,6 +196,7 @@ export function GitHubDeployForm({
       });
       setSelectedRepoFullName(inspection.repository.fullName);
       setBranch(inspection.ref || inspection.repository.defaultBranch);
+      setSubPath(inspection.subPath ?? '');
       setEntrypoint(inspection.suggestedEntrypoint);
       setEntrypointCandidates(inspection.entrypointCandidates);
       setFunctionName(inspection.suggestedFunctionName);
@@ -199,6 +213,7 @@ export function GitHubDeployForm({
   useEffect(() => {
     if (!selectedRepo) {
       setBranch('');
+      setSubPath('');
       setEntrypoint('');
       setEntrypointCandidates([]);
       setFunctionName('');
@@ -217,6 +232,7 @@ export function GitHubDeployForm({
           return;
         }
         setBranch((current) => current || inspection.ref || selectedRepo.defaultBranch);
+        setSubPath(inspection.subPath ?? '');
         setEntrypoint(inspection.suggestedEntrypoint);
         setEntrypointCandidates(inspection.entrypointCandidates);
         setFunctionName((current) => current || inspection.suggestedFunctionName);
@@ -227,6 +243,7 @@ export function GitHubDeployForm({
         if (!cancelled) {
           setLocalError(err instanceof Error ? err.message : 'Unable to inspect repository.');
           setBranch(selectedRepo.defaultBranch);
+          setSubPath('');
           setEntrypoint('');
           setEntrypointCandidates([]);
           setFunctionName(selectedRepo.repo.replace(/[^a-zA-Z0-9-_]+/g, '-').toLowerCase());
@@ -305,6 +322,7 @@ export function GitHubDeployForm({
         repoFullName: selectedRepo.fullName,
         gitUrl: selectedRepo.gitUrl ?? `https://github.com/${selectedRepo.fullName}.git`,
         gitRef: branch.trim() || selectedRepo.defaultBranch,
+        subPath: subPath.trim() || undefined,
         entrypoint: deliveryKind === 'website' ? '' : entrypoint.trim(),
         deliveryKind,
         framework: framework ?? undefined,
@@ -335,59 +353,46 @@ export function GitHubDeployForm({
 
   return (
     <div className="max-w-[680px]">
-      <p className="text-[12px] text-sub mb-8">
-        Deploy directly from repositories your GitHub App installation can access. The control plane will clone the repo, build it, and package an immutable function artifact from git.
-      </p>
-
-      <div className="mb-8">
-        <div className="border border-border bg-surface p-6 rounded">
-          <p className="text-[12px] text-white mb-2">GitHub App</p>
-          {loadingStatus ? (
-            <p className="text-[10px] text-sub">Checking GitHub App configuration...</p>
-          ) : appConfigured ? (
-            <>
-              <p className="text-[11px] text-cyan-primary">
-                {status?.name || 'GitHub App'} is configured{status?.slug ? ` (${status.slug})` : ''}.
-              </p>
-              {installations.length > 0 ? (
-                <p className="text-[10px] text-sub mt-2">
-                  Select one of the GitHub App installations your signed-in account can access, or paste a repository URL below.
-                </p>
-              ) : (
-                <p className="text-[10px] text-sub mt-2">
-                  The app is configured, but your signed-in GitHub account does not have any accessible Lecrev App installations yet. Install the app on a repository or organization, then refresh this step.
-                </p>
-              )}
-              {statusError && (
-                <p className="text-[10px] text-amber-300 mt-2">
-                  {statusError}
-                </p>
-              )}
-              {appInstallUrl && (
-                <div className="mt-4">
-                  <GhostBtn
-                    onClick={() => {
-                      window.open(appInstallUrl, '_blank', 'noopener,noreferrer');
-                    }}
-                  >
-                    Install GitHub App
-                  </GhostBtn>
-                </div>
-              )}
-            </>
-          ) : appKnownNotConfigured ? (
-            <p className="text-[10px] text-amber-300">
-              GitHub App credentials are not configured yet. Add `GITHUB_APP_ID` and `GITHUB_PRIVATE_KEY_PATH`.
-            </p>
-          ) : (
-            <p className="text-[10px] text-amber-300">
-              Unable to verify GitHub App status right now. {statusError ?? 'Try refreshing this page.'}
-            </p>
-          )}
+      {/* GitHub App Status */}
+      <div className="border border-border bg-surface/60 p-5 mb-2">
+        <div className="flex items-center gap-3 mb-3">
+          <div className={`w-2 h-2 rounded-full shrink-0 ${loadingStatus ? 'bg-border-md animate-pulse' : appConfigured ? 'bg-cyan-primary' : 'bg-amber-400'}`} />
+          <p className="text-[11px] text-white font-medium">
+            {loadingStatus
+              ? 'Checking GitHub App…'
+              : appConfigured
+                ? `${status?.name || 'GitHub App'} connected${status?.slug ? ` · ${status.slug}` : ''}`
+                : appKnownNotConfigured
+                  ? 'GitHub App not configured'
+                  : 'GitHub App status unknown'}
+          </p>
         </div>
+        {!loadingStatus && (
+          <p className="text-[10px] text-sub leading-relaxed">
+            {appConfigured
+              ? installations.length > 0
+                ? 'Select an installation below or paste a repository URL to import.'
+                : 'App is connected but no accessible installations found. Install the app on a repository or organization.'
+              : appKnownNotConfigured
+                ? 'Add GITHUB_APP_ID and GITHUB_PRIVATE_KEY_PATH to enable GitHub deploys.'
+                : (statusError ?? 'Unable to verify GitHub App status. Try refreshing.')}
+          </p>
+        )}
+        {statusError && appConfigured && (
+          <p className="text-[10px] text-amber-300 mt-2">{statusError}</p>
+        )}
+        {appInstallUrl && (
+          <div className="mt-4">
+            <GhostBtn onClick={() => { window.open(appInstallUrl, '_blank', 'noopener,noreferrer'); }}>
+              Install GitHub App
+            </GhostBtn>
+          </div>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
+      <SectionDivider>Repository</SectionDivider>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
         <SelectInput
           label="Installation"
           options={installationOptions.length ? installationOptions : ['No installations found']}
@@ -400,49 +405,51 @@ export function GitHubDeployForm({
           }}
         />
         <TextInput
-          label="Repository Search"
+          label="Filter Repositories"
           value={repoFilter}
           onChange={setRepoFilter}
-          placeholder="Filter accessible repositories"
+          placeholder="Search by name…"
         />
       </div>
 
-      <div className="mb-6">
+      <div className="mb-5">
         <SelectInput
           label="Repository"
           options={repositoryOptions.length ? repositoryOptions : [loadingRepos ? 'Loading repositories…' : 'No accessible repositories']}
           value={selectedRepoFullName}
           onChange={setSelectedRepoFullName}
         />
-        <p className="text-[10px] text-muted mt-2">
-          {selectedRepo ? `${selectedRepo.private ? 'Private' : 'Public'} repository via installation ${selectedRepo.installationId ?? selectedInstallationID ?? '-'}` : 'Select an installation-scoped repository to continue.'}
-        </p>
+        {selectedRepo && (
+          <p className="text-[10px] text-muted mt-2">
+            {selectedRepo.private ? 'Private' : 'Public'} · installation {selectedRepo.installationId ?? selectedInstallationID ?? '-'}
+          </p>
+        )}
       </div>
 
-      <div className="mb-6">
+      <div className="mb-5">
         <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 items-end">
           <TextInput
-            label="GitHub Repository URL"
+            label="Repository URL"
             value={repoUrl}
             onChange={setRepoUrl}
             placeholder="https://github.com/owner/repo"
           />
           <GhostBtn
-            onClick={() => {
-              void handleUseRepositoryURL();
-            }}
+            onClick={() => { void handleUseRepositoryURL(); }}
             disabled={loadingInspection || !repoUrl.trim()}
-            className="h-[41px]"
+            className="h-[37px]"
           >
             {loadingInspection ? 'Inspecting…' : 'Use URL'}
           </GhostBtn>
         </div>
         <p className="text-[10px] text-muted mt-2">
-          Paste a GitHub URL if the repository is not convenient to pick from the installation list.
+          Paste a URL if the repo isn't in the list above.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
+      <SectionDivider>Configuration</SectionDivider>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
         <TextInput
           label="Function Name"
           value={functionName}
@@ -457,7 +464,7 @@ export function GitHubDeployForm({
         />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-2">
         <SelectInput
           label={deliveryKind === 'website' ? 'Detected Framework' : 'Suggested Entrypoints'}
           options={deliveryKind === 'website'
@@ -473,19 +480,21 @@ export function GitHubDeployForm({
           }}
         />
         <TextInput
-          label={deliveryKind === 'website' ? 'Entrypoint (optional for websites)' : 'Entrypoint'}
+          label={deliveryKind === 'website' ? 'Entrypoint (optional)' : 'Entrypoint'}
           value={entrypoint}
           onChange={setEntrypoint}
-          placeholder={deliveryKind === 'website' ? 'Leave blank to let Lecrev package the Next.js website' : 'dist/index.js'}
+          placeholder={deliveryKind === 'website' ? 'Leave blank for auto-packaging' : 'dist/index.js'}
         />
       </div>
       {deliveryKind === 'website' && (
-        <p className="text-[10px] text-cyan-primary mt-[-1rem] mb-6">
-          {framework ?? 'Website'} detected. Lecrev will package the standalone app, serve static assets, and attach a website preview plus Function URL automatically.
+        <p className="text-[10px] text-cyan-primary mb-5">
+          {framework ?? 'Website'} detected{subPath.trim() ? ` in ${subPath.trim()}` : ''} — Lecrev will package the standalone app and attach a preview URL automatically.
         </p>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-8">
+      <SectionDivider>Deploy Settings</SectionDivider>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
         <SelectInput
           label="Environment"
           options={['Production', 'Staging', 'Preview']}
@@ -500,8 +509,10 @@ export function GitHubDeployForm({
         />
       </div>
 
+      {envVarsSlot}
+
       {combinedError && (
-        <div className="mb-8 border border-red-500/30 bg-red-500/5 px-4 py-3 text-[11px] text-red-400 rounded">{combinedError}</div>
+        <div className="mb-6 border border-red-500/30 bg-red-500/5 px-4 py-3 text-[11px] text-red-400">{combinedError}</div>
       )}
 
       <div className="flex gap-3">

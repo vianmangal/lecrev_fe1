@@ -29,6 +29,7 @@ export interface GitHubRepository {
 export interface GitHubRepoInspection {
   repository: GitHubRepository;
   ref: string;
+  subPath?: string;
   entrypointCandidates: string[];
   suggestedEntrypoint: string;
   suggestedFunctionName: string;
@@ -43,6 +44,7 @@ export interface GitHubDeploymentBindingInput {
   repoFullName: string;
   gitUrl: string;
   gitRef: string;
+  subPath?: string;
   entrypoint: string;
   envVars?: Record<string, string>;
   projectId: string;
@@ -64,6 +66,7 @@ export interface GitHubDeploymentBinding {
   repoFullName: string;
   gitUrl: string;
   gitRef: string;
+  subPath?: string;
   entrypoint: string;
   envVars?: Record<string, string>;
   projectId: string;

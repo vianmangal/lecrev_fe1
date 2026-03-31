@@ -20,6 +20,7 @@ test('upsertGitHubRepoBinding inserts a new binding with env vars', async () => 
     repoFullName: 'theg1239/examcooker-paper-counter',
     gitUrl: 'https://github.com/theg1239/examcooker-paper-counter.git',
     gitRef: 'master',
+    subPath: 'apps/web',
     entrypoint: 'server/index.js',
     envVars: {
       DATABASE_URL: 'postgres://example',
@@ -34,4 +35,5 @@ test('upsertGitHubRepoBinding inserts a new binding with env vars', async () => 
   assert.equal(binding.repoFullName, 'theg1239/examcooker-paper-counter');
   assert.equal(binding.envVars.DATABASE_URL, 'postgres://example');
   assert.equal(binding.projectId, 'gh-project-52027622');
+  assert.equal(binding.subPath, 'apps/web');
 });
