@@ -26,6 +26,7 @@ const createBindingsTableSQL = `
     git_url text not null,
     git_ref text not null,
     entrypoint text not null,
+    env_vars text not null default '{}',
     project_id text not null,
     function_name text not null,
     environment text not null,
@@ -94,9 +95,10 @@ function migrateBindingsTable(): void {
   }
 
   const columns = columnNames('github_repo_bindings');
-  if (columns.has('user_id') && columns.has('tenant_id')) {
+  if (columns.has('user_id') && columns.has('tenant_id') && columns.has('env_vars')) {
     return;
   }
+  const envVarsExpr = columns.has('env_vars') ? 'env_vars' : `'{}'`;
 
   db.exec(`
     pragma foreign_keys = off;
@@ -113,6 +115,7 @@ function migrateBindingsTable(): void {
       git_url,
       git_ref,
       entrypoint,
+      env_vars,
       project_id,
       function_name,
       environment,
@@ -135,6 +138,7 @@ function migrateBindingsTable(): void {
       git_url,
       git_ref,
       entrypoint,
+      ${envVarsExpr},
       project_id,
       function_name,
       environment,
@@ -286,6 +290,7 @@ export interface GitHubRepoBinding {
   gitUrl: string;
   gitRef: string;
   entrypoint: string;
+  envVars: Record<string, string>;
   projectId: string;
   functionName: string;
   environment: 'production' | 'staging' | 'preview';
@@ -308,6 +313,7 @@ export interface UpsertGitHubRepoBindingInput {
   gitUrl: string;
   gitRef: string;
   entrypoint: string;
+  envVars?: Record<string, string>;
   projectId: string;
   functionName: string;
   environment: 'production' | 'staging' | 'preview';
@@ -388,6 +394,7 @@ function rowToBinding(row: Record<string, unknown>): GitHubRepoBinding {
     gitUrl: String(row.git_url),
     gitRef: String(row.git_ref),
     entrypoint: String(row.entrypoint),
+    envVars: parseEnvVars(row.env_vars),
     projectId: String(row.project_id),
     functionName: String(row.function_name),
     environment: String(row.environment) as GitHubRepoBinding['environment'],
@@ -470,6 +477,7 @@ export function upsertGitHubUserConnection(input: UpsertGitHubUserConnectionInpu
 
 export function upsertGitHubRepoBinding(input: UpsertGitHubRepoBindingInput): GitHubRepoBinding {
   const now = new Date().toISOString();
+  const envVars = stringifyEnvVars(input.envVars);
   const existing = db.prepare(`
     select *
     from github_repo_bindings
@@ -498,6 +506,7 @@ export function upsertGitHubRepoBinding(input: UpsertGitHubRepoBindingInput): Gi
           repo_full_name = ?,
           git_url = ?,
           entrypoint = ?,
+          env_vars = ?,
           environment = ?,
           region = ?,
           auto_deploy = ?,
@@ -511,6 +520,7 @@ export function upsertGitHubRepoBinding(input: UpsertGitHubRepoBindingInput): Gi
       input.repoFullName,
       input.gitUrl,
       input.entrypoint,
+      envVars,
       input.environment,
       input.region,
       input.autoDeploy === false ? 0 : 1,
@@ -538,6 +548,7 @@ export function upsertGitHubRepoBinding(input: UpsertGitHubRepoBindingInput): Gi
       git_url,
       git_ref,
       entrypoint,
+      env_vars,
       project_id,
       function_name,
       environment,
@@ -560,6 +571,7 @@ export function upsertGitHubRepoBinding(input: UpsertGitHubRepoBindingInput): Gi
     input.gitUrl,
     input.gitRef,
     input.entrypoint,
+    envVars,
     input.projectId,
     input.functionName,
     input.environment,
@@ -574,6 +586,28 @@ export function upsertGitHubRepoBinding(input: UpsertGitHubRepoBindingInput): Gi
 
   const created = db.prepare('select * from github_repo_bindings where id = ?').get(id) as Record<string, unknown>;
   return rowToBinding(created);
+}
+
+function parseEnvVars(raw: unknown): Record<string, string> {
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const next: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed ?? {})) {
+      if (typeof value === 'string') {
+        next[key] = value;
+      }
+    }
+    return next;
+  } catch {
+    return {};
+  }
+}
+
+function stringifyEnvVars(envVars?: Record<string, string>): string {
+  return JSON.stringify(envVars ?? {});
 }
 
 export function listGitHubRepoBindingsByUser(userId: string): GitHubRepoBinding[] {

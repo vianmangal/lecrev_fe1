@@ -6,12 +6,14 @@ import {
   ApiConnection,
   BuildJob,
   ExecutionJob,
+  FunctionSiteMetadata,
   FunctionVersion,
   HTTPTrigger,
   LiveDeploymentRecord,
   createHTTPTrigger,
   getBuildJob,
   getBuildJobLogs,
+  getFunctionSite,
   getFunctionVersion,
   getJob,
   getJobLogs,
@@ -44,6 +46,7 @@ export function DeploySuccess({
   const [jobLogs, setJobLogs] = useState<string | undefined>(record?.jobLogs);
   const [jobOutput, setJobOutput] = useState<unknown>(record?.jobOutput);
   const [functionURL, setFunctionURL] = useState<HTTPTrigger | undefined>(record?.functionURLs?.[0]);
+  const [functionSite, setFunctionSite] = useState<FunctionSiteMetadata | undefined>(record?.functionSite);
   const [monitorError, setMonitorError] = useState<string | null>(record?.error ?? null);
 
   useEffect(() => {
@@ -54,6 +57,7 @@ export function DeploySuccess({
     if (record?.jobLogs) setJobLogs(record.jobLogs);
     if (record?.jobOutput !== undefined) setJobOutput(record.jobOutput);
     if (record?.functionURLs?.[0]) setFunctionURL(record.functionURLs[0]);
+    if (record?.functionSite) setFunctionSite(record.functionSite);
     if (record?.error) setMonitorError(record.error);
   }, [record]);
 
@@ -76,6 +80,7 @@ export function DeploySuccess({
           let nextBuildState: BuildJob | undefined;
           let nextJobState: ExecutionJob | undefined;
           let nextFunctionURL: HTTPTrigger | undefined;
+          let nextFunctionSite: FunctionSiteMetadata | undefined;
 
           if (activeBuildJobId) {
             nextBuildState = await getBuildJob(connection, activeBuildJobId);
@@ -86,6 +91,10 @@ export function DeploySuccess({
           }
 
           if (nextVersion.state === 'ready') {
+            nextFunctionSite = await getFunctionSite(connection, versionId).catch(() => undefined);
+            if (!cancelled && nextFunctionSite) {
+              setFunctionSite(nextFunctionSite);
+            }
             const existingTriggers = await listHTTPTriggers(connection, versionId).catch(() => [] as HTTPTrigger[]);
             if (cancelled) return;
             if (existingTriggers.length > 0) {
@@ -100,6 +109,10 @@ export function DeploySuccess({
               if (!cancelled && created) {
                 nextFunctionURL = created;
                 setFunctionURL(created);
+                nextFunctionSite = await getFunctionSite(connection, versionId).catch(() => nextFunctionSite);
+                if (!cancelled && nextFunctionSite) {
+                  setFunctionSite(nextFunctionSite);
+                }
               }
             }
           }
@@ -121,7 +134,7 @@ export function DeploySuccess({
           const jobTerminal = !activeJobId || nextJobState?.state === 'succeeded' || nextJobState?.state === 'failed';
           const versionTerminal = nextVersion.state === 'ready' || nextVersion.state === 'failed';
 
-          if (versionTerminal && buildTerminal && jobTerminal && (nextFunctionURL || nextVersion.state !== 'ready')) {
+          if (versionTerminal && buildTerminal && jobTerminal && (nextFunctionURL || nextFunctionSite?.functionUrl || nextVersion.state !== 'ready')) {
             return;
           }
         } catch (err) {
@@ -140,6 +153,7 @@ export function DeploySuccess({
   const effectiveBuildJob = buildJob ?? record?.buildJob;
   const effectiveJob = job ?? record?.job;
   const effectiveError = monitorError ?? record?.error ?? null;
+  const displayFunctionURL = functionURL?.url ?? functionSite?.functionUrl;
 
   const hasFailed = Boolean(
     effectiveError ||
@@ -233,8 +247,8 @@ export function DeploySuccess({
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="min-w-0">
             <p className="text-[10px] uppercase tracking-[0.15em] text-cyan-primary mb-2">Function URL</p>
-            {functionURL ? (
-              <p className="text-sm text-white break-all">{functionURL.url}</p>
+            {displayFunctionURL ? (
+              <p className="text-sm text-white break-all">{displayFunctionURL}</p>
             ) : (
               <p className="text-sm text-sub">
                 {effectiveVersion?.state === 'ready'
@@ -243,18 +257,40 @@ export function DeploySuccess({
               </p>
             )}
           </div>
-          {functionURL && (
+          {displayFunctionURL && (
             <div className="flex flex-wrap gap-2 shrink-0">
-              <GhostBtn small onClick={() => { window.navigator.clipboard.writeText(functionURL.url).catch(() => undefined); }}>
+              <GhostBtn small onClick={() => { window.navigator.clipboard.writeText(displayFunctionURL).catch(() => undefined); }}>
                 Copy URL
               </GhostBtn>
-              <GhostBtn small onClick={() => { window.open(functionURL.url, '_blank', 'noopener,noreferrer'); }}>
+              <GhostBtn small onClick={() => { window.open(displayFunctionURL, '_blank', 'noopener,noreferrer'); }}>
                 Open URL
               </GhostBtn>
             </div>
           )}
         </div>
       </div>
+
+      {functionSite?.previewUrl && (
+        <div className="border border-border bg-surface/40 p-4 sm:p-5 mb-8">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="min-w-0">
+              <p className="text-[10px] uppercase tracking-[0.15em] text-cyan-primary mb-2">Website Preview</p>
+              <p className="text-sm text-white break-all">{functionSite.previewUrl}</p>
+              <p className="mt-2 text-[10px] uppercase tracking-[0.12em] text-sub">
+                {functionSite.framework} preview route backed by the deployed standalone website bundle
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 shrink-0">
+              <GhostBtn small onClick={() => { window.navigator.clipboard.writeText(functionSite.previewUrl).catch(() => undefined); }}>
+                Copy Preview URL
+              </GhostBtn>
+              <GhostBtn small onClick={() => { window.open(functionSite.previewUrl, '_blank', 'noopener,noreferrer'); }}>
+                Open Preview
+              </GhostBtn>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Logs */}
       {latestLogs ? (

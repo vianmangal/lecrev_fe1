@@ -443,6 +443,7 @@ async function createDeploymentRun(input: {
     environment: input.environment,
     region: input.binding.region,
     entrypoint: input.binding.entrypoint,
+    envVars: input.binding.envVars,
     gitUrl: await buildAuthenticatedGitURL({
       installationId: input.installationId,
       owner: input.owner,
@@ -473,6 +474,7 @@ async function createDeploymentRun(input: {
       gitUrl: input.binding.gitUrl,
       gitRef: input.binding.gitRef,
       entrypoint: input.binding.entrypoint,
+      envVars: input.binding.envVars,
       projectId: input.binding.projectId,
       functionName: input.binding.functionName,
       environment: input.binding.environment,
@@ -914,6 +916,7 @@ export function createGitHubDeploymentRouter() {
       gitUrl: string;
       gitRef: string;
       entrypoint: string;
+      envVars?: Record<string, string>;
       projectId: string;
       functionName: string;
       environment: 'production' | 'staging' | 'preview';
@@ -925,8 +928,8 @@ export function createGitHubDeploymentRouter() {
       lastCommitSha?: string;
     }>;
 
-    if (!body.installationId || !body.owner || !body.repo || !body.gitRef || !body.entrypoint || !body.functionName) {
-      res.status(400).json({ error: 'installationId, owner, repo, gitRef, entrypoint, and functionName are required.' });
+    if (!body.installationId || !body.owner || !body.repo || !body.gitRef || !body.functionName) {
+      res.status(400).json({ error: 'installationId, owner, repo, gitRef, and functionName are required.' });
       return;
     }
 
@@ -969,7 +972,8 @@ export function createGitHubDeploymentRouter() {
         repoFullName: authorized.repository.fullName,
         gitUrl: authorized.repository.gitUrl ?? body.gitUrl ?? canonicalGitURL(authorized.repository.owner, authorized.repository.repo),
         gitRef: body.gitRef,
-        entrypoint: body.entrypoint,
+        entrypoint: body.entrypoint?.trim() ?? '',
+        envVars: body.envVars,
         projectId,
         functionName,
         environment,

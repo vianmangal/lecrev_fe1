@@ -2,11 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ApiConnection, DeployRequestInput, LiveDeploymentRecord, ProjectRecord } from './api';
 import { DeployMode, DeployModePicker } from './components/deploy/DeployModePicker';
+import { EnvVarsEditor } from './components/deploy/EnvVarsEditor';
 import { FileDeployForm } from './components/deploy/FileDeployForm';
 import { FunctionDeployForm } from './components/deploy/FunctionDeployForm';
 import { GitHubDeployForm, GitHubDeploySubmission } from './components/deploy/GitHubDeployForm';
 import { DeploySuccess } from './components/deploy/DeploySuccess';
 import { CyanBtn, GhostBtn, SelectInput, TextInput } from './components/UI';
+import { parseEnvVarsInput } from './lib/env-vars';
 
 interface DeployPageProps {
   onBack: () => void;
@@ -23,6 +25,7 @@ interface DeployPageProps {
     functionName: string;
     environment: 'production' | 'staging' | 'preview';
     region: string;
+    envVars?: Record<string, string>;
   }) => Promise<{ versionId: string; buildJobId?: string }>;
   projects: ProjectRecord[];
   selectedProjectId: string;
@@ -60,6 +63,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({
   const [creatingProject, setCreatingProject] = useState(false);
   const [projectName, setProjectName] = useState('');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [envVarsText, setEnvVarsText] = useState('');
 
   const liveDeployment = deployInfo
     ? liveDeployments.find((record) => record.version.id === deployInfo.versionId) ?? null
@@ -100,6 +104,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({
     if (!cleanedProject) {
       throw new Error('Create or select a project before deploying.');
     }
+    const envVars = parseEnvVarsInput(envVarsText);
     const cleanedName = sanitizeName(mode === 'file' ? (file?.name || 'uploaded-function') : 'ui-function');
 
     if (mode === 'file') {
@@ -114,6 +119,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({
         environment,
         region: selectedRegion,
         entrypoint,
+        envVars,
         inlineFiles: {
           [entrypoint]: content,
         },
@@ -126,6 +132,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({
       environment,
       region: selectedRegion,
       entrypoint: 'handler.mjs',
+      envVars,
       inlineFiles: {
         'handler.mjs': functionVal,
       },
@@ -168,6 +175,7 @@ export const DeployPage: React.FC<DeployPageProps> = ({
         functionName: sanitizeName(submission.functionName || submission.repoFullName.replace(/\//g, '-')),
         environment: environment.toLowerCase() as 'production' | 'staging' | 'preview',
         region: selectedRegion,
+        envVars: parseEnvVarsInput(envVarsText),
       });
       setDeployInfo(info);
       setDeployed(true);
@@ -312,56 +320,65 @@ export const DeployPage: React.FC<DeployPageProps> = ({
             </div>
 
             {mode === 'file' && (
-              <FileDeployForm
-                file={file}
-                dragging={dragging}
-                error={error}
-                region={region}
-                regionOptions={regionOptions}
-                isSubmitting={isSubmitting}
-                onSelectFile={setFile}
-                onSetDragging={setDragging}
-                onRegionChange={setRegion}
-                onDeploy={() => void handleDirectDeploy()}
-                onCancel={() => {
-                  setMode(null);
-                  setError(null);
-                }}
-              />
+              <>
+                <EnvVarsEditor value={envVarsText} onChange={setEnvVarsText} disabled={isSubmitting} />
+                <FileDeployForm
+                  file={file}
+                  dragging={dragging}
+                  error={error}
+                  region={region}
+                  regionOptions={regionOptions}
+                  isSubmitting={isSubmitting}
+                  onSelectFile={setFile}
+                  onSetDragging={setDragging}
+                  onRegionChange={setRegion}
+                  onDeploy={() => void handleDirectDeploy()}
+                  onCancel={() => {
+                    setMode(null);
+                    setError(null);
+                  }}
+                />
+              </>
             )}
 
             {mode === 'code' && (
-              <GitHubDeployForm
-                environment={environment}
-                region={region}
-                regionOptions={regionOptions}
-                isSubmitting={isSubmitting}
-                error={error}
-                onEnvironmentChange={setEnvironment}
-                onRegionChange={setRegion}
-                onCancel={() => {
-                  setMode(null);
-                  setError(null);
-                }}
-                onDeploy={handleGitHubDeploy}
-              />
+              <>
+                <EnvVarsEditor value={envVarsText} onChange={setEnvVarsText} disabled={isSubmitting} />
+                <GitHubDeployForm
+                  environment={environment}
+                  region={region}
+                  regionOptions={regionOptions}
+                  isSubmitting={isSubmitting}
+                  error={error}
+                  onEnvironmentChange={setEnvironment}
+                  onRegionChange={setRegion}
+                  onCancel={() => {
+                    setMode(null);
+                    setError(null);
+                  }}
+                  onDeploy={handleGitHubDeploy}
+                />
+              </>
             )}
 
             {mode === 'function' && (
-              <FunctionDeployForm
-                code={functionVal}
-                error={error}
-                region={region}
-                regionOptions={regionOptions}
-                isSubmitting={isSubmitting}
-                onCodeChange={setFunctionVal}
-                onRegionChange={setRegion}
-                onDeploy={() => void handleDirectDeploy()}
-                onCancel={() => {
-                  setMode(null);
-                  setError(null);
-                }}
-              />
+              <>
+                <EnvVarsEditor value={envVarsText} onChange={setEnvVarsText} disabled={isSubmitting} />
+                <FunctionDeployForm
+                  code={functionVal}
+                  error={error}
+                  region={region}
+                  regionOptions={regionOptions}
+                  isSubmitting={isSubmitting}
+                  onCodeChange={setFunctionVal}
+                  onRegionChange={setRegion}
+                  onDeploy={() => void handleDirectDeploy()}
+                  onCancel={() => {
+                    setMode(null);
+                    setError(null);
+                  }}
+                />
+              </>
             )}
           </motion.div>
         )}

@@ -41,6 +41,7 @@ export interface CreateGitFunctionVersionInput {
   environment: 'production' | 'staging' | 'preview';
   region: string;
   entrypoint: string;
+  envVars?: Record<string, string>;
   gitUrl: string;
   gitRef: string;
   idempotencyKey: string;
@@ -86,6 +87,7 @@ export async function createGitFunctionVersion(connection: LecrevServerConnectio
     timeoutSec: 30,
     networkPolicy: 'none',
     regions: [input.region],
+    envVars: input.envVars,
     envRefs: [],
     maxRetries: 2,
     idempotencyKey: input.idempotencyKey,

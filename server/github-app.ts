@@ -73,6 +73,8 @@ interface GitHubPackageManifest {
   main?: string;
   module?: string;
   exports?: string | Record<string, unknown>;
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
 }
 
 class GitHubAPIError extends Error {
@@ -393,6 +395,27 @@ function deriveEntrypointCandidates(tree: GitHubTreePayload['tree'], packageMani
   return uniqueStrings([...explicitCandidates, ...scored]).slice(0, 12);
 }
 
+function isNextWorkspace(packageManifest?: GitHubPackageManifest | null): boolean {
+  if (!packageManifest) {
+    return false;
+  }
+  for (const deps of [packageManifest.dependencies, packageManifest.devDependencies]) {
+    if (deps && typeof deps === 'object' && 'next' in deps) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasNextWebsiteSurface(tree: GitHubTreePayload['tree']): boolean {
+  return (tree ?? []).some((entry) => {
+    if (entry.type !== 'blob') {
+      return false;
+    }
+    return /(^|\/)(app\/page|src\/app\/page|pages\/index)\.(jsx?|tsx?)$/.test(entry.path);
+  });
+}
+
 async function maybeReadPackageManifest(owner: string, repo: string, ref: string, token: string): Promise<GitHubPackageManifest | null> {
   try {
     const payload = await githubRequest<{ content?: string }>(
@@ -600,14 +623,17 @@ export function createGitHubAppRouter() {
           token,
         );
         const packageManifest = await maybeReadPackageManifest(req.params.owner, req.params.repo, ref, token);
+        const nextWebsite = isNextWorkspace(packageManifest) && hasNextWebsiteSurface(tree.tree);
         const entrypointCandidates = deriveEntrypointCandidates(tree.tree, packageManifest);
 
         return {
           repository: authorized.repository,
           ref,
           entrypointCandidates,
-          suggestedEntrypoint: entrypointCandidates[0] ?? '',
+          suggestedEntrypoint: nextWebsite ? '' : (entrypointCandidates[0] ?? ''),
           suggestedFunctionName: authorized.repository.repo.replace(/[^a-zA-Z0-9-_]+/g, '-').toLowerCase(),
+          framework: nextWebsite ? 'nextjs' : undefined,
+          deliveryKind: nextWebsite ? 'website' : 'function',
         };
       });
       res.json(payload);

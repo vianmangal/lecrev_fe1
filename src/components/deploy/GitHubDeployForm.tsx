@@ -19,6 +19,8 @@ export interface GitHubDeploySubmission {
   gitUrl: string;
   gitRef: string;
   entrypoint: string;
+  deliveryKind?: 'function' | 'website';
+  framework?: string;
 }
 
 interface GitHubDeployFormProps {
@@ -55,6 +57,8 @@ export function GitHubDeployForm({
   const [entrypoint, setEntrypoint] = useState('');
   const [entrypointCandidates, setEntrypointCandidates] = useState<string[]>([]);
   const [functionName, setFunctionName] = useState('');
+  const [deliveryKind, setDeliveryKind] = useState<'function' | 'website'>('function');
+  const [framework, setFramework] = useState<string | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [loadingInspection, setLoadingInspection] = useState(false);
@@ -182,6 +186,8 @@ export function GitHubDeployForm({
       setEntrypoint(inspection.suggestedEntrypoint);
       setEntrypointCandidates(inspection.entrypointCandidates);
       setFunctionName(inspection.suggestedFunctionName);
+      setDeliveryKind(inspection.deliveryKind ?? 'function');
+      setFramework(inspection.framework ?? null);
       setRepoUrl(inspection.repository.htmlUrl ?? `https://github.com/${inspection.repository.fullName}`);
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : 'Unable to inspect repository.');
@@ -196,6 +202,8 @@ export function GitHubDeployForm({
       setEntrypoint('');
       setEntrypointCandidates([]);
       setFunctionName('');
+      setDeliveryKind('function');
+      setFramework(null);
       return;
     }
 
@@ -212,6 +220,8 @@ export function GitHubDeployForm({
         setEntrypoint(inspection.suggestedEntrypoint);
         setEntrypointCandidates(inspection.entrypointCandidates);
         setFunctionName((current) => current || inspection.suggestedFunctionName);
+        setDeliveryKind(inspection.deliveryKind ?? 'function');
+        setFramework(inspection.framework ?? null);
       })
       .catch((err) => {
         if (!cancelled) {
@@ -220,6 +230,8 @@ export function GitHubDeployForm({
           setEntrypoint('');
           setEntrypointCandidates([]);
           setFunctionName(selectedRepo.repo.replace(/[^a-zA-Z0-9-_]+/g, '-').toLowerCase());
+          setDeliveryKind('function');
+          setFramework(null);
         }
       })
       .finally(() => {
@@ -274,7 +286,7 @@ export function GitHubDeployForm({
       setLocalError('Select an installed repository before deploying.');
       return;
     }
-    if (!entrypoint.trim()) {
+    if (deliveryKind !== 'website' && !entrypoint.trim()) {
       setLocalError('Entrypoint is required for git deploys.');
       return;
     }
@@ -293,7 +305,9 @@ export function GitHubDeployForm({
         repoFullName: selectedRepo.fullName,
         gitUrl: selectedRepo.gitUrl ?? `https://github.com/${selectedRepo.fullName}.git`,
         gitRef: branch.trim() || selectedRepo.defaultBranch,
-        entrypoint: entrypoint.trim(),
+        entrypoint: deliveryKind === 'website' ? '' : entrypoint.trim(),
+        deliveryKind,
+        framework: framework ?? undefined,
       });
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : 'GitHub deploy failed.');
@@ -445,18 +459,31 @@ export function GitHubDeployForm({
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
         <SelectInput
-          label="Suggested Entrypoints"
-          options={entrypointCandidates.length ? entrypointCandidates : [loadingInspection ? 'Inspecting repository…' : 'No entrypoints found']}
-          value={entrypointCandidates.includes(entrypoint) ? entrypoint : entrypointCandidates[0] ?? ''}
-          onChange={setEntrypoint}
+          label={deliveryKind === 'website' ? 'Detected Framework' : 'Suggested Entrypoints'}
+          options={deliveryKind === 'website'
+            ? [framework ? `${framework} website` : 'website']
+            : (entrypointCandidates.length ? entrypointCandidates : [loadingInspection ? 'Inspecting repository…' : 'No entrypoints found'])}
+          value={deliveryKind === 'website'
+            ? (framework ? `${framework} website` : 'website')
+            : (entrypointCandidates.includes(entrypoint) ? entrypoint : entrypointCandidates[0] ?? '')}
+          onChange={(value) => {
+            if (deliveryKind !== 'website') {
+              setEntrypoint(value);
+            }
+          }}
         />
         <TextInput
-          label="Entrypoint"
+          label={deliveryKind === 'website' ? 'Entrypoint (optional for websites)' : 'Entrypoint'}
           value={entrypoint}
           onChange={setEntrypoint}
-          placeholder="dist/index.js"
+          placeholder={deliveryKind === 'website' ? 'Leave blank to let Lecrev package the Next.js website' : 'dist/index.js'}
         />
       </div>
+      {deliveryKind === 'website' && (
+        <p className="text-[10px] text-cyan-primary mt-[-1rem] mb-6">
+          {framework ?? 'Website'} detected. Lecrev will package the standalone app, serve static assets, and attach a website preview plus Function URL automatically.
+        </p>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-8">
         <SelectInput
@@ -480,7 +507,7 @@ export function GitHubDeployForm({
       <div className="flex gap-3">
         <CyanBtn
           onClick={() => void handleDeploy()}
-          disabled={isSubmitting || loadingInspection || !appConfigured || !selectedRepo || !entrypoint.trim() || !functionName.trim()}
+          disabled={isSubmitting || loadingInspection || !appConfigured || !selectedRepo || (deliveryKind !== 'website' && !entrypoint.trim()) || !functionName.trim()}
         >
           {isSubmitting ? 'Deploying...' : 'Deploy From GitHub →'}
         </CyanBtn>

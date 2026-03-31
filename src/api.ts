@@ -30,6 +30,7 @@ export interface CreateFunctionRequest {
   timeoutSec: number;
   networkPolicy: 'none' | 'full';
   regions: string[];
+  envVars?: Record<string, string>;
   envRefs: string[];
   maxRetries: number;
   idempotencyKey: string;
@@ -46,6 +47,7 @@ export interface FunctionVersion {
   timeoutSec: number;
   networkPolicy: 'none' | 'allowlist' | 'full';
   regions: string[];
+  envVars?: Record<string, string>;
   envRefs: string[];
   maxRetries: number;
   buildJobId?: string;
@@ -165,6 +167,16 @@ export interface HTTPTrigger {
   createdAt: string;
 }
 
+export interface FunctionSiteMetadata {
+  functionVersionId: string;
+  framework: string;
+  dynamicEntrypoint: string;
+  staticPrefix: string;
+  previewUrl: string;
+  functionUrl?: string;
+  createdAt: string;
+}
+
 export interface FunctionWarmRegionStatus {
   region: string;
   state: string;
@@ -215,6 +227,7 @@ export interface DeployRequestInput {
   environment: Deployment['env'];
   region: string;
   entrypoint: string;
+  envVars?: Record<string, string>;
   inlineFiles?: Record<string, string>;
   gitUrl?: string;
   gitRef?: string;
@@ -231,6 +244,7 @@ export interface LiveDeploymentRecord {
   jobLogs?: string;
   jobOutput?: unknown;
   functionURLs?: HTTPTrigger[];
+  functionSite?: FunctionSiteMetadata;
   error?: string;
 }
 
@@ -458,6 +472,10 @@ export async function getFunctionVersion(connection: ApiConnection, versionId: s
   return request<FunctionVersion>(connection, 'GET', `/v1/functions/${versionId}`);
 }
 
+export async function getFunctionSite(connection: ApiConnection, versionId: string): Promise<FunctionSiteMetadata> {
+  return request<FunctionSiteMetadata>(connection, 'GET', `/v1/functions/${versionId}/site`);
+}
+
 export async function getBuildJob(connection: ApiConnection, jobId: string): Promise<BuildJob> {
   return request<BuildJob>(connection, 'GET', `/v1/build-jobs/${jobId}`);
 }
@@ -516,6 +534,7 @@ export async function createFunctionVersion(connection: ApiConnection, input: De
     timeoutSec: 30,
     networkPolicy: 'none',
     regions: [input.region],
+    envVars: input.envVars,
     envRefs: [],
     maxRetries: 2,
     idempotencyKey: makeIdempotencyKey('deploy'),

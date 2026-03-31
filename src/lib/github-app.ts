@@ -32,6 +32,8 @@ export interface GitHubRepoInspection {
   entrypointCandidates: string[];
   suggestedEntrypoint: string;
   suggestedFunctionName: string;
+  framework?: string;
+  deliveryKind?: 'function' | 'website';
 }
 
 export interface GitHubDeploymentBindingInput {
@@ -42,6 +44,7 @@ export interface GitHubDeploymentBindingInput {
   gitUrl: string;
   gitRef: string;
   entrypoint: string;
+  envVars?: Record<string, string>;
   projectId: string;
   functionName: string;
   environment: 'production' | 'staging' | 'preview';
@@ -62,6 +65,7 @@ export interface GitHubDeploymentBinding {
   gitUrl: string;
   gitRef: string;
   entrypoint: string;
+  envVars?: Record<string, string>;
   projectId: string;
   functionName: string;
   environment: 'production' | 'staging' | 'preview';

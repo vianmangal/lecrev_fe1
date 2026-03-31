@@ -413,6 +413,7 @@ export function useDashboardData() {
     functionName: string;
     environment: 'production' | 'staging' | 'preview';
     region: string;
+    envVars?: Record<string, string>;
   }) => {
     try {
       setIntegrationError(null);
@@ -436,6 +437,7 @@ export function useDashboardData() {
         functionName: input.functionName,
         environment: input.environment,
         region: input.region,
+        envVars: input.envVars,
         autoDeploy: true,
         deployNow: true,
       });
