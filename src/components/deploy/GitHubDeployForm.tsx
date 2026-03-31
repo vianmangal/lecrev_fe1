@@ -59,22 +59,37 @@ export function GitHubDeployForm({
   const [loadingRepos, setLoadingRepos] = useState(false);
   const [loadingInspection, setLoadingInspection] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [installationsError, setInstallationsError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    void Promise.all([getGitHubAppStatus(), listGitHubInstallations()])
-      .then(([nextStatus, nextInstallations]) => {
+    void Promise.allSettled([getGitHubAppStatus(), listGitHubInstallations()])
+      .then(([statusResult, installationsResult]) => {
         if (cancelled) {
           return;
         }
-        setStatus(nextStatus);
-        setInstallations(nextInstallations);
-        setSelectedInstallationID((current) => current ?? nextInstallations[0]?.id ?? null);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setLocalError(err instanceof Error ? err.message : 'Unable to load GitHub App status.');
+
+        if (statusResult.status === 'fulfilled') {
+          setStatus(statusResult.value);
+          setStatusError(null);
+        } else {
+          setStatus(null);
+          setStatusError(statusResult.reason instanceof Error ? statusResult.reason.message : 'Unable to load GitHub App status.');
+        }
+
+        if (installationsResult.status === 'fulfilled') {
+          setInstallations(installationsResult.value);
+          setInstallationsError(null);
+          setSelectedInstallationID((current) => current ?? installationsResult.value[0]?.id ?? null);
+        } else {
+          setInstallations([]);
+          setInstallationsError(
+            installationsResult.reason instanceof Error
+              ? installationsResult.reason.message
+              : 'Unable to load GitHub App installations.',
+          );
         }
       })
       .finally(() => {
@@ -294,9 +309,10 @@ export function GitHubDeployForm({
     await inspectRepositorySelection(parsed.owner, parsed.repo);
   };
 
-  const combinedError = localError || error;
+  const combinedError = localError || installationsError || error;
   const appInstallUrl = status?.installUrl;
-  const appConfigured = Boolean(status?.configured);
+  const appConfigured = status?.configured === true;
+  const appKnownNotConfigured = status?.configured === false;
   const installationOptions = installations.map((installation) => `${installation.accountLogin} (#${installation.id})`);
   const selectedInstallationLabel = installations.find((installation) => installation.id === selectedInstallationID)
     ? `${installations.find((installation) => installation.id === selectedInstallationID)?.accountLogin} (#${selectedInstallationID})`
@@ -319,9 +335,20 @@ export function GitHubDeployForm({
               <p className="text-[11px] text-cyan-primary">
                 {status?.name || 'GitHub App'} is configured{status?.slug ? ` (${status.slug})` : ''}.
               </p>
-              <p className="text-[10px] text-sub mt-2">
-                Install the app on a repository or organization first, then choose from the accessible installation list below.
-              </p>
+              {installations.length > 0 ? (
+                <p className="text-[10px] text-sub mt-2">
+                  Select one of the GitHub App installations your signed-in account can access, or paste a repository URL below.
+                </p>
+              ) : (
+                <p className="text-[10px] text-sub mt-2">
+                  The app is configured, but your signed-in GitHub account does not have any accessible Lecrev App installations yet. Install the app on a repository or organization, then refresh this step.
+                </p>
+              )}
+              {statusError && (
+                <p className="text-[10px] text-amber-300 mt-2">
+                  {statusError}
+                </p>
+              )}
               {appInstallUrl && (
                 <div className="mt-4">
                   <GhostBtn
@@ -334,9 +361,13 @@ export function GitHubDeployForm({
                 </div>
               )}
             </>
-          ) : (
+          ) : appKnownNotConfigured ? (
             <p className="text-[10px] text-amber-300">
               GitHub App credentials are not configured yet. Add `GITHUB_APP_ID` and `GITHUB_PRIVATE_KEY_PATH`.
+            </p>
+          ) : (
+            <p className="text-[10px] text-amber-300">
+              Unable to verify GitHub App status right now. {statusError ?? 'Try refreshing this page.'}
             </p>
           )}
         </div>

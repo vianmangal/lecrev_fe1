@@ -179,14 +179,12 @@ export function useDashboardData() {
         };
       });
     } else {
-      setBackendProjects([]);
       nextError ??= projectsResult.reason instanceof Error ? projectsResult.reason.message : 'Unable to load projects.';
     }
 
     if (deploymentsResult.status === 'fulfilled') {
       setBackendDeployments(deploymentsResult.value);
     } else {
-      setBackendDeployments([]);
       nextError ??= deploymentsResult.reason instanceof Error ? deploymentsResult.reason.message : 'Unable to load deployments.';
     }
 

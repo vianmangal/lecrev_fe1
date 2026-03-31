@@ -50,15 +50,28 @@ export default function App() {
     selectProject,
     refetchSession,
   } = useDashboardData();
+  const [lastKnownUser, setLastKnownUser] = useState<typeof activeUser>(activeUser);
   const [detailFunctionURLs, setDetailFunctionURLs] = useState<HTTPTrigger[]>([]);
   const [functionURLBusy, setFunctionURLBusy] = useState(false);
   const [functionURLError, setFunctionURLError] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeUser) {
+      setLastKnownUser(activeUser);
+      return;
+    }
+    if (!isSessionPending) {
+      setLastKnownUser(null);
+    }
+  }, [activeUser, isSessionPending]);
+
+  const effectiveUser = activeUser ?? lastKnownUser;
+
+  useEffect(() => {
+    if (effectiveUser) {
       setAuthMode(null);
     }
-  }, [activeUser]);
+  }, [effectiveUser]);
 
   useEffect(() => {
     if (!activeProj) {
@@ -153,7 +166,8 @@ export default function App() {
     setMobileMenuOpen(false);
   };
 
-  const showLanding = !activeUser;
+  const showLanding = !effectiveUser && !isSessionPending;
+  const showSessionSplash = !effectiveUser && isSessionPending;
 
   return (
     <div className="bg-bg text-white font-sans">
@@ -174,7 +188,9 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {showLanding ? (
+      {showSessionSplash ? (
+        <div className="min-h-dvh bg-bg" />
+      ) : showLanding ? (
         <LandingPage
           onSignIn={() => setAuthMode('signin')}
         />
@@ -194,7 +210,7 @@ export default function App() {
             <Header
               screen={screen}
               activeProject={activeProj}
-              activeUser={activeUser}
+              activeUser={effectiveUser}
               isSessionPending={isSessionPending}
               authRequired={authRequired}
               accountOpen={acctOpen}
@@ -208,8 +224,13 @@ export default function App() {
             />
 
             <main className="flex-1 overflow-hidden relative flex flex-col">
+              {isConnectionPending && (
+                <div className="absolute inset-x-0 top-0 z-20 border-b border-border bg-bg/80 px-6 py-2 text-[10px] uppercase tracking-[0.16em] text-sub backdrop-blur">
+                  Refreshing dashboard data…
+                </div>
+              )}
               <AnimatePresence mode="wait">
-                {!isConnectionPending && screen === 'projects' && (
+                {screen === 'projects' && (
                   <ProjectsScreen
                     key="projects"
                     onViewProject={(project) => {
@@ -219,8 +240,8 @@ export default function App() {
                     projects={projectRows}
                   />
                 )}
-                {!isConnectionPending && screen === 'deployments' && <DeploymentsScreen key="deployments" deployments={deploymentRows} />}
-                {!isConnectionPending && screen === 'detail' && (
+                {screen === 'deployments' && <DeploymentsScreen key="deployments" deployments={deploymentRows} />}
+                {screen === 'detail' && (
                   <DetailScreen
                     key="detail"
                     project={activeProj}
@@ -236,7 +257,7 @@ export default function App() {
                     }}
                   />
                 )}
-                {!isConnectionPending && screen === 'settings' && (
+                {screen === 'settings' && (
                   <SettingsScreen
                     key="settings"
                     settingsTab={settingsTab}
@@ -246,7 +267,7 @@ export default function App() {
                     availableRegions={availableRegions}
                   />
                 )}
-                {!isConnectionPending && screen === 'deploy' && (
+                {screen === 'deploy' && (
                   <DeployPage
                     key="deploy"
                     onBack={() => go('deployments')}
