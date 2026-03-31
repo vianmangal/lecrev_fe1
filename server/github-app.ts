@@ -29,6 +29,10 @@ export interface GitHubViewerPayload {
   login?: string;
 }
 
+interface GitHubOrgPayload {
+  login?: string;
+}
+
 interface GitHubInstallationPayload {
   id: number;
   target_type?: string;
@@ -69,6 +73,18 @@ interface GitHubPackageManifest {
   main?: string;
   module?: string;
   exports?: string | Record<string, unknown>;
+}
+
+class GitHubAPIError extends Error {
+  status: number;
+  body: string;
+
+  constructor(status: number, body: string) {
+    super(body || `GitHub API request failed with ${status}`);
+    this.name = 'GitHubAPIError';
+    this.status = status;
+    this.body = body;
+  }
 }
 
 function base64URL(value: string): string {
@@ -117,7 +133,7 @@ async function githubRequest<T>(path: string, init: RequestInit = {}, authToken?
 
   const raw = await response.text();
   if (!response.ok) {
-    throw new Error(raw || `GitHub API request failed with ${response.status}`);
+    throw new GitHubAPIError(response.status, raw || `GitHub API request failed with ${response.status}`);
   }
   return raw ? JSON.parse(raw) as T : (undefined as T);
 }
@@ -145,14 +161,14 @@ async function withKnownInstallationToken<T>(installationID: number, fn: (token:
   return fn(installationToken);
 }
 
-async function listUserInstallations(accessToken: string): Promise<GitHubInstallationPayload[]> {
+async function listAppInstallations(): Promise<GitHubInstallationPayload[]> {
   const installations: GitHubInstallationPayload[] = [];
   const perPage = 100;
   for (let page = 1; page <= 100; page += 1) {
     const payload = await githubRequest<GitHubInstallationsResponse | GitHubInstallationPayload[]>(
-      `/user/installations?per_page=${perPage}&page=${page}`,
+      `/app/installations?per_page=${perPage}&page=${page}`,
       {},
-      accessToken,
+      createAppJWT(),
     );
     const nextPage = Array.isArray(payload) ? payload : (payload.installations ?? []);
     installations.push(...nextPage);
@@ -163,16 +179,17 @@ async function listUserInstallations(accessToken: string): Promise<GitHubInstall
   return installations;
 }
 
-async function listUserInstallationRepositories(accessToken: string, installationID: number): Promise<GitHubInstallationRepositoriesResponse> {
+async function listInstallationRepositories(installationID: number): Promise<GitHubInstallationRepositoriesResponse> {
   const repositories: GitHubRepoPayload[] = [];
   const perPage = 100;
   let totalCount = 0;
+  const installationToken = await createInstallationToken(installationID);
 
   for (let page = 1; page <= 100; page += 1) {
     const payload = await githubRequest<GitHubInstallationRepositoriesResponse>(
-      `/user/installations/${installationID}/repositories?per_page=${perPage}&page=${page}`,
+      `/installation/repositories?per_page=${perPage}&page=${page}`,
       {},
-      accessToken,
+      installationToken,
     );
     const nextPage = payload.repositories ?? [];
     totalCount = payload.total_count ?? totalCount;
@@ -192,10 +209,68 @@ export async function getGitHubViewer(accessToken: string): Promise<GitHubViewer
   return githubRequest<GitHubViewerPayload>('/user', {}, accessToken);
 }
 
+async function listViewerOrganizations(accessToken: string): Promise<GitHubOrgPayload[]> {
+  const organizations: GitHubOrgPayload[] = [];
+  const perPage = 100;
+  for (let page = 1; page <= 100; page += 1) {
+    const payload = await githubRequest<GitHubOrgPayload[]>(
+      `/user/orgs?per_page=${perPage}&page=${page}`,
+      {},
+      accessToken,
+    );
+    organizations.push(...payload);
+    if (payload.length < perPage) {
+      break;
+    }
+  }
+  return organizations;
+}
+
+async function listAccessibleInstallations(accessToken: string): Promise<GitHubInstallationPayload[]> {
+  const [viewer, orgs, installations] = await Promise.all([
+    getGitHubViewer(accessToken),
+    listViewerOrganizations(accessToken).catch(() => [] as GitHubOrgPayload[]),
+    listAppInstallations(),
+  ]);
+
+  const allowedAccountLogins = new Set<string>();
+  if (viewer.login) {
+    allowedAccountLogins.add(viewer.login.toLowerCase());
+  }
+  for (const organization of orgs) {
+    if (organization.login) {
+      allowedAccountLogins.add(organization.login.toLowerCase());
+    }
+  }
+
+  return installations.filter((installation) => {
+    const login = installation.account?.login?.toLowerCase();
+    return Boolean(login && allowedAccountLogins.has(login));
+  });
+}
+
 function sendGitHubError(res: express.Response, error: unknown) {
   const message = error instanceof Error ? error.message : 'GitHub request failed.';
+  if (error instanceof GitHubAPIError) {
+    switch (error.status) {
+      case 401:
+        res.status(401).json({ error: 'Your GitHub session is not authorized. Sign in again.' });
+        return;
+      case 403:
+        res.status(403).json({ error: 'Your GitHub session does not have access to this installation or repository. Sign in again after granting the requested scopes.' });
+        return;
+      case 404:
+        res.status(404).json({ error: 'GitHub App is not installed on this repository or the repository could not be found.' });
+        return;
+      case 429:
+        res.status(429).json({ error: message });
+        return;
+      default:
+        break;
+    }
+  }
   const lower = message.toLowerCase();
-  if (lower.includes('installation') || lower.includes('not found') || lower.includes('"message":"not found"')) {
+  if (lower.includes('not found') || lower.includes('"message":"not found"')) {
     res.status(404).json({ error: 'GitHub App is not installed on this repository or the repository could not be found.' });
     return;
   }
@@ -359,13 +434,13 @@ export async function loadAuthorizedRepository(req: express.Request, owner: stri
   }
 
   const installationId = await resolveInstallationID(owner, repo);
-  const installations = await listUserInstallations(context.accessToken);
+  const installations = await listAccessibleInstallations(context.accessToken);
   if (!installations.some((installation) => installation.id === installationId)) {
     const error = new Error('resource not accessible by integration');
     throw error;
   }
 
-  const repositoriesPayload = await listUserInstallationRepositories(context.accessToken, installationId);
+  const repositoriesPayload = await listInstallationRepositories(installationId);
   const repository = (repositoriesPayload.repositories ?? [])
     .map((entry) => normalizeRepository(entry, installationId))
     .find((entry) => entry.fullName.toLowerCase() === `${owner}/${repo}`.toLowerCase());
@@ -421,7 +496,7 @@ export function createGitHubAppRouter() {
     }
 
     try {
-      const installations = await listUserInstallations(context.accessToken);
+      const installations = await listAccessibleInstallations(context.accessToken);
       res.json({
         configured: true,
         userId: context.user.id,
@@ -451,13 +526,13 @@ export function createGitHubAppRouter() {
     const query = `${req.query.q ?? ''}`.trim().toLowerCase();
 
     try {
-      const installations = await listUserInstallations(context.accessToken);
+      const installations = await listAccessibleInstallations(context.accessToken);
       if (!installations.some((installation) => installation.id === installationID)) {
         res.status(403).json({ error: 'This installation is not accessible to the signed-in user.' });
         return;
       }
 
-      const payload = await listUserInstallationRepositories(context.accessToken, installationID);
+      const payload = await listInstallationRepositories(installationID);
       const filtered = (payload.repositories ?? [])
         .map((repo) => normalizeRepository(repo, installationID))
         .filter((repo) => {
