@@ -44,6 +44,7 @@ export interface CreateGitFunctionVersionInput {
   subPath?: string;
   deliveryKind?: 'function' | 'website';
   framework?: string;
+  networkPolicy?: 'none' | 'full';
   envVars?: Record<string, string>;
   gitUrl: string;
   gitRef: string;
@@ -81,6 +82,7 @@ export async function createGitFunctionVersion(connection: LecrevServerConnectio
   if (!projectId) {
     throw new Error('Lecrev project is not configured for this user session.');
   }
+  const isWebsite = input.deliveryKind === 'website' || input.framework === 'nextjs' || input.entrypoint.trim() === '';
   return request<LecrevFunctionVersion>(connection, 'POST', `/v1/projects/${projectId}/functions`, {
     name: input.name,
     environment: input.environment,
@@ -88,7 +90,7 @@ export async function createGitFunctionVersion(connection: LecrevServerConnectio
     entrypoint: input.entrypoint,
     memoryMb: 256,
     timeoutSec: 30,
-    networkPolicy: 'none',
+    networkPolicy: input.networkPolicy ?? (isWebsite ? 'full' : 'none'),
     regions: [input.region],
     envVars: input.envVars,
     envRefs: [],

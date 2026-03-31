@@ -227,6 +227,9 @@ export interface DeployRequestInput {
   environment: Deployment['env'];
   region: string;
   entrypoint: string;
+  networkPolicy?: 'none' | 'full';
+  deliveryKind?: 'function' | 'website';
+  framework?: string;
   envVars?: Record<string, string>;
   inlineFiles?: Record<string, string>;
   gitUrl?: string;
@@ -519,11 +522,20 @@ export async function createFunctionVersion(connection: ApiConnection, input: De
         gitUrl: input.gitUrl,
         gitRef: input.gitRef,
         subPath: input.subPath,
+        metadata: {
+          deliveryKind: input.deliveryKind,
+          framework: input.framework,
+        },
       }
     : {
         type: 'bundle',
         inlineFiles: input.inlineFiles,
+        metadata: {
+          deliveryKind: input.deliveryKind,
+          framework: input.framework,
+        },
       };
+  const isWebsite = input.deliveryKind === 'website' || input.framework === 'nextjs' || !input.entrypoint.trim();
 
   const body: CreateFunctionRequest = {
     name: input.name,
@@ -532,7 +544,7 @@ export async function createFunctionVersion(connection: ApiConnection, input: De
     entrypoint: input.entrypoint,
     memoryMb: 256,
     timeoutSec: 30,
-    networkPolicy: 'none',
+    networkPolicy: input.networkPolicy ?? (isWebsite ? 'full' : 'none'),
     regions: [input.region],
     envVars: input.envVars,
     envRefs: [],
