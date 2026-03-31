@@ -10,21 +10,17 @@ interface GeneralSettingsPanelProps {
 
 export function GeneralSettingsPanel({ connection, availableRegions, onSaveConnection }: GeneralSettingsPanelProps) {
   const [baseUrl, setBaseUrl] = React.useState(connection.baseUrl);
-  const [apiKey, setApiKey] = React.useState(connection.apiKey);
-  const [projectId, setProjectId] = React.useState(connection.projectId);
   const [savedAt, setSavedAt] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setBaseUrl(connection.baseUrl);
-    setApiKey(connection.apiKey);
-    setProjectId(connection.projectId);
-  }, [connection.baseUrl, connection.apiKey, connection.projectId]);
+  }, [connection.baseUrl]);
 
   const saveConnection = () => {
     onSaveConnection({
       baseUrl: baseUrl.trim(),
-      apiKey: apiKey.trim(),
-      projectId: projectId.trim(),
+      apiKey: connection.apiKey,
+      projectId: connection.projectId,
     });
     setSavedAt(new Date().toLocaleTimeString('en-GB', { hour12: false }));
   };
@@ -41,20 +37,18 @@ export function GeneralSettingsPanel({ connection, availableRegions, onSaveConne
             label="API Base URL"
             value={baseUrl}
             onChange={setBaseUrl}
-            placeholder="Leave blank to use /v1 dev proxy"
+            placeholder="Leave blank to use the configured production API"
           />
-          <TextInput
-            label="X-API-Key"
-            value={apiKey}
-            onChange={setApiKey}
-            placeholder="API key"
-          />
-          <TextInput
-            label="Default Project ID"
-            value={projectId}
-            onChange={setProjectId}
-            placeholder="Project ID"
-          />
+          <div className="border border-border px-3 py-2">
+            <p className="text-[9px] uppercase tracking-[0.12em] text-muted">Tenant API Key</p>
+            <p className="mt-2 text-[11px] text-sub">
+              Managed by your GitHub session. The browser no longer stores or edits a shared control-plane key.
+            </p>
+          </div>
+          <div className="border border-border px-3 py-2">
+            <p className="text-[9px] uppercase tracking-[0.12em] text-muted">Default Project ID</p>
+            <p className="mt-2 text-[11px] text-white break-all">{connection.projectId || 'Provisioning…'}</p>
+          </div>
         </div>
         {availableRegions.length > 0 && (
           <div className="mt-4">

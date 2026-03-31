@@ -13,9 +13,11 @@ if (!fs.existsSync(dbDir)) {
 
 const db = new DatabaseSync(dbPath);
 
-db.exec(`
+const createBindingsTableSQL = `
   create table if not exists github_repo_bindings (
     id text primary key,
+    user_id text not null,
+    tenant_id text not null,
     installation_id integer not null,
     owner text not null,
     repo text not null,
@@ -33,12 +35,17 @@ db.exec(`
     last_commit_sha text,
     created_at text not null,
     updated_at text not null,
-    unique (installation_id, owner, repo, git_ref, project_id, function_name)
+    unique (user_id, installation_id, owner, repo, git_ref, project_id, function_name)
   );
+`;
 
+const createRunsTableSQL = `
   create table if not exists github_deployment_runs (
     id text primary key,
     binding_id text not null,
+    user_id text not null,
+    tenant_id text not null,
+    project_id text not null,
     installation_id integer not null,
     owner text not null,
     repo text not null,
@@ -55,13 +62,148 @@ db.exec(`
     updated_at text not null,
     foreign key (binding_id) references github_repo_bindings(id)
   );
+`;
 
-  create unique index if not exists github_deployment_runs_binding_commit_idx
-    on github_deployment_runs(binding_id, commit_sha);
+function columnNames(tableName: string): Set<string> {
+  const rows = db.prepare(`pragma table_info(${tableName})`).all() as Array<{ name?: unknown }>;
+  return new Set(rows.map((row) => String(row.name ?? '')));
+}
+
+function tableExists(tableName: string): boolean {
+  const row = db.prepare(`
+    select name
+    from sqlite_master
+    where type = 'table' and name = ?
+  `).get(tableName) as { name?: string } | undefined;
+  return Boolean(row?.name);
+}
+
+function migrateBindingsTable(): void {
+  if (!tableExists('github_repo_bindings')) {
+    db.exec(createBindingsTableSQL);
+    return;
+  }
+
+  const columns = columnNames('github_repo_bindings');
+  if (columns.has('user_id') && columns.has('tenant_id')) {
+    return;
+  }
+
+  db.exec(`
+    pragma foreign_keys = off;
+    alter table github_repo_bindings rename to github_repo_bindings_legacy;
+    ${createBindingsTableSQL}
+    insert into github_repo_bindings (
+      id,
+      user_id,
+      tenant_id,
+      installation_id,
+      owner,
+      repo,
+      repo_full_name,
+      git_url,
+      git_ref,
+      entrypoint,
+      project_id,
+      function_name,
+      environment,
+      region,
+      auto_deploy,
+      last_function_version_id,
+      last_build_job_id,
+      last_commit_sha,
+      created_at,
+      updated_at
+    )
+    select
+      id,
+      'legacy',
+      'legacy',
+      installation_id,
+      owner,
+      repo,
+      repo_full_name,
+      git_url,
+      git_ref,
+      entrypoint,
+      project_id,
+      function_name,
+      environment,
+      region,
+      auto_deploy,
+      last_function_version_id,
+      last_build_job_id,
+      last_commit_sha,
+      created_at,
+      updated_at
+    from github_repo_bindings_legacy;
+    drop table github_repo_bindings_legacy;
+    pragma foreign_keys = on;
+  `);
+}
+
+function migrateRunsTable(): void {
+  if (!tableExists('github_deployment_runs')) {
+    db.exec(createRunsTableSQL);
+  } else {
+    const columns = columnNames('github_deployment_runs');
+    if (!columns.has('user_id')) {
+      db.exec(`alter table github_deployment_runs add column user_id text not null default 'legacy';`);
+    }
+    if (!columns.has('tenant_id')) {
+      db.exec(`alter table github_deployment_runs add column tenant_id text not null default 'legacy';`);
+    }
+    if (!columns.has('project_id')) {
+      db.exec(`alter table github_deployment_runs add column project_id text not null default 'legacy';`);
+    }
+  }
+
+  db.exec(`
+    create unique index if not exists github_deployment_runs_binding_commit_idx
+      on github_deployment_runs(binding_id, commit_sha);
+  `);
+}
+
+migrateBindingsTable();
+migrateRunsTable();
+
+db.exec(`
+  create table if not exists github_user_connections (
+    user_id text primary key,
+    github_account_id text not null,
+    github_login text not null,
+    tenant_id text not null,
+    project_id text not null,
+    api_key text not null,
+    created_at text not null,
+    updated_at text not null
+  );
 `);
+
+export interface GitHubUserConnection {
+  userId: string;
+  githubAccountId: string;
+  githubLogin: string;
+  tenantId: string;
+  projectId: string;
+  apiKey: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UpsertGitHubUserConnectionInput {
+  userId: string;
+  githubAccountId: string;
+  githubLogin: string;
+  tenantId: string;
+  projectId: string;
+  apiKey: string;
+}
 
 export interface GitHubRepoBinding {
   id: string;
+  userId: string;
+  tenantId: string;
   installationId: number;
   owner: string;
   repo: string;
@@ -82,6 +224,8 @@ export interface GitHubRepoBinding {
 }
 
 export interface UpsertGitHubRepoBindingInput {
+  userId: string;
+  tenantId: string;
   installationId: number;
   owner: string;
   repo: string;
@@ -102,6 +246,9 @@ export interface UpsertGitHubRepoBindingInput {
 export interface GitHubDeploymentRun {
   id: string;
   bindingId: string;
+  userId: string;
+  tenantId: string;
+  projectId: string;
   installationId: number;
   owner: string;
   repo: string;
@@ -120,6 +267,9 @@ export interface GitHubDeploymentRun {
 
 export interface CreateGitHubDeploymentRunInput {
   bindingId: string;
+  userId: string;
+  tenantId: string;
+  projectId: string;
   installationId: number;
   owner: string;
   repo: string;
@@ -132,9 +282,24 @@ export interface CreateGitHubDeploymentRunInput {
   targetUrl?: string;
 }
 
+function rowToConnection(row: Record<string, unknown>): GitHubUserConnection {
+  return {
+    userId: String(row.user_id),
+    githubAccountId: String(row.github_account_id),
+    githubLogin: String(row.github_login),
+    tenantId: String(row.tenant_id),
+    projectId: String(row.project_id),
+    apiKey: String(row.api_key),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
 function rowToBinding(row: Record<string, unknown>): GitHubRepoBinding {
   return {
     id: String(row.id),
+    userId: String(row.user_id),
+    tenantId: String(row.tenant_id),
     installationId: Number(row.installation_id),
     owner: String(row.owner),
     repo: String(row.repo),
@@ -159,6 +324,9 @@ function rowToRun(row: Record<string, unknown>): GitHubDeploymentRun {
   return {
     id: String(row.id),
     bindingId: String(row.binding_id),
+    userId: String(row.user_id),
+    tenantId: String(row.tenant_id),
+    projectId: String(row.project_id),
     installationId: Number(row.installation_id),
     owner: String(row.owner),
     repo: String(row.repo),
@@ -176,18 +344,60 @@ function rowToRun(row: Record<string, unknown>): GitHubDeploymentRun {
   };
 }
 
+export function getGitHubUserConnection(userId: string): GitHubUserConnection | null {
+  const row = db.prepare('select * from github_user_connections where user_id = ?').get(userId) as Record<string, unknown> | undefined;
+  return row ? rowToConnection(row) : null;
+}
+
+export function upsertGitHubUserConnection(input: UpsertGitHubUserConnectionInput): GitHubUserConnection {
+  const now = new Date().toISOString();
+  db.prepare(`
+    insert into github_user_connections (
+      user_id,
+      github_account_id,
+      github_login,
+      tenant_id,
+      project_id,
+      api_key,
+      created_at,
+      updated_at
+    ) values (?, ?, ?, ?, ?, ?, ?, ?)
+    on conflict(user_id) do update set
+      github_account_id = excluded.github_account_id,
+      github_login = excluded.github_login,
+      tenant_id = excluded.tenant_id,
+      project_id = excluded.project_id,
+      api_key = excluded.api_key,
+      updated_at = excluded.updated_at
+  `).run(
+    input.userId,
+    input.githubAccountId,
+    input.githubLogin,
+    input.tenantId,
+    input.projectId,
+    input.apiKey,
+    now,
+    now,
+  );
+
+  const row = db.prepare('select * from github_user_connections where user_id = ?').get(input.userId) as Record<string, unknown>;
+  return rowToConnection(row);
+}
+
 export function upsertGitHubRepoBinding(input: UpsertGitHubRepoBindingInput): GitHubRepoBinding {
   const now = new Date().toISOString();
   const existing = db.prepare(`
     select *
     from github_repo_bindings
-    where installation_id = ?
+    where user_id = ?
+      and installation_id = ?
       and owner = ?
       and repo = ?
       and git_ref = ?
       and project_id = ?
       and function_name = ?
   `).get(
+    input.userId,
     input.installationId,
     input.owner,
     input.repo,
@@ -200,7 +410,8 @@ export function upsertGitHubRepoBinding(input: UpsertGitHubRepoBindingInput): Gi
     const existingID = String(existing.id);
     db.prepare(`
       update github_repo_bindings
-      set repo_full_name = ?,
+      set tenant_id = ?,
+          repo_full_name = ?,
           git_url = ?,
           entrypoint = ?,
           environment = ?,
@@ -212,6 +423,7 @@ export function upsertGitHubRepoBinding(input: UpsertGitHubRepoBindingInput): Gi
           updated_at = ?
       where id = ?
     `).run(
+      input.tenantId,
       input.repoFullName,
       input.gitUrl,
       input.entrypoint,
@@ -232,12 +444,31 @@ export function upsertGitHubRepoBinding(input: UpsertGitHubRepoBindingInput): Gi
   const id = randomUUID();
   db.prepare(`
     insert into github_repo_bindings (
-      id, installation_id, owner, repo, repo_full_name, git_url, git_ref, entrypoint,
-      project_id, function_name, environment, region, auto_deploy,
-      last_function_version_id, last_build_job_id, last_commit_sha, created_at, updated_at
-    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      id,
+      user_id,
+      tenant_id,
+      installation_id,
+      owner,
+      repo,
+      repo_full_name,
+      git_url,
+      git_ref,
+      entrypoint,
+      project_id,
+      function_name,
+      environment,
+      region,
+      auto_deploy,
+      last_function_version_id,
+      last_build_job_id,
+      last_commit_sha,
+      created_at,
+      updated_at
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
+    input.userId,
+    input.tenantId,
     input.installationId,
     input.owner,
     input.repo,
@@ -261,8 +492,13 @@ export function upsertGitHubRepoBinding(input: UpsertGitHubRepoBindingInput): Gi
   return rowToBinding(created);
 }
 
-export function listGitHubRepoBindings(): GitHubRepoBinding[] {
-  const rows = db.prepare('select * from github_repo_bindings order by updated_at desc').all() as Record<string, unknown>[];
+export function listGitHubRepoBindingsByUser(userId: string): GitHubRepoBinding[] {
+  const rows = db.prepare(`
+    select *
+    from github_repo_bindings
+    where user_id = ?
+    order by updated_at desc
+  `).all(userId) as Record<string, unknown>[];
   return rows.map(rowToBinding);
 }
 
@@ -294,12 +530,31 @@ export function createGitHubDeploymentRun(input: CreateGitHubDeploymentRunInput)
   const now = new Date().toISOString();
   db.prepare(`
     insert into github_deployment_runs (
-      id, binding_id, installation_id, owner, repo, repo_full_name, git_ref, commit_sha,
-      function_version_id, build_job_id, state, status_context, target_url, created_at, updated_at
-    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      id,
+      binding_id,
+      user_id,
+      tenant_id,
+      project_id,
+      installation_id,
+      owner,
+      repo,
+      repo_full_name,
+      git_ref,
+      commit_sha,
+      function_version_id,
+      build_job_id,
+      state,
+      status_context,
+      target_url,
+      created_at,
+      updated_at
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.bindingId,
+    input.userId,
+    input.tenantId,
+    input.projectId,
     input.installationId,
     input.owner,
     input.repo,

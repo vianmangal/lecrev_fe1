@@ -10,6 +10,7 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env.local'), override: true 
 const { auth, isGithubAuthConfigured } = await import('./auth');
 const { createGitHubAppRouter, isGithubAppConfigured } = await import('./github-app');
 const { createGitHubDeploymentRouter, startGitHubDeploymentMonitor } = await import('./github-automation');
+const { createLecrevRouter } = await import('./lecrev-router');
 
 const app = express();
 const authHandler = toNodeHandler(auth);
@@ -22,6 +23,7 @@ app.all('/api/auth', handleAuthRequest);
 app.all('/api/auth/*', handleAuthRequest);
 app.use('/api/github', createGitHubAppRouter());
 app.use('/api/github', createGitHubDeploymentRouter());
+app.use('/api/lecrev', createLecrevRouter());
 
 app.get('/health/auth', (_req, res) => {
   res.json({

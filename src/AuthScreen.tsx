@@ -46,6 +46,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         callbackURL,
         errorCallbackURL: callbackURL,
         disableRedirect: true,
+        scopes: ['read:user', 'user:email', 'read:org', 'repo'],
       });
 
       if (response.data?.url) {

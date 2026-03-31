@@ -41,6 +41,7 @@ export function useDashboardData() {
   const [backendDeployments, setBackendDeployments] = useState<DeploymentSummary[]>([]);
   const [integrationError, setIntegrationError] = useState<string | null>(null);
   const [githubConfigured, setGithubConfigured] = useState<boolean | null>(null);
+  const [isConnectionPending, setIsConnectionPending] = useState(false);
   const { data: sessionData, isPending: isSessionPending, refetch: refetchSession } = authClient.useSession();
 
   const activeUser = sessionData?.user ?? null;
@@ -76,6 +77,75 @@ export function useDashboardData() {
     };
   }, []);
 
+  useEffect(() => {
+    if (isSessionPending) {
+      return;
+    }
+
+    if (!activeUser) {
+      setConnection((current) => ({
+        baseUrl: current.baseUrl || DEFAULT_CONNECTION.baseUrl,
+        apiKey: '',
+        projectId: '',
+      }));
+      setBackendProjects([]);
+      setBackendDeployments([]);
+      setLiveDeployments([]);
+      setAvailableRegions(FALLBACK_REGIONS);
+      setIntegrationError(null);
+      setIsConnectionPending(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsConnectionPending(true);
+
+    void fetch('/api/lecrev/connection', {
+      headers: {
+        Accept: 'application/json',
+      },
+    })
+      .then(async (response) => {
+        const raw = await response.text();
+        if (!response.ok) {
+          throw new Error(raw.trim() || `Unable to load session connection (${response.status})`);
+        }
+        return raw ? JSON.parse(raw) as {
+          connection?: Partial<ApiConnection>;
+        } : {};
+      })
+      .then((payload) => {
+        if (cancelled) {
+          return;
+        }
+        setConnection((current) => ({
+          baseUrl: current.baseUrl.trim() || payload.connection?.baseUrl?.trim() || DEFAULT_CONNECTION.baseUrl,
+          apiKey: payload.connection?.apiKey?.trim() || '',
+          projectId: payload.connection?.projectId?.trim() || '',
+        }));
+        setIntegrationError(null);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setIntegrationError(err instanceof Error ? err.message : 'Unable to provision the session connection.');
+          setConnection((current) => ({
+            baseUrl: current.baseUrl || DEFAULT_CONNECTION.baseUrl,
+            apiKey: '',
+            projectId: '',
+          }));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsConnectionPending(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeUser, isSessionPending]);
+
   const refreshCatalog = useCallback(async (conn: ApiConnection) => {
     const [regionsResult, projectsResult, deploymentsResult] = await Promise.allSettled([
       listRegions(conn),
@@ -110,6 +180,9 @@ export function useDashboardData() {
   }, []);
 
   useEffect(() => {
+    if (!activeUser || !connection.apiKey.trim()) {
+      return;
+    }
     let cancelled = false;
     void (async () => {
       await refreshCatalog(connection);
@@ -120,7 +193,7 @@ export function useDashboardData() {
     return () => {
       cancelled = true;
     };
-  }, [connection.baseUrl, connection.apiKey, refreshCatalog]);
+  }, [activeUser, connection.baseUrl, connection.apiKey, refreshCatalog]);
 
   const patchLiveDeployment = useCallback((versionId: string, updater: (record: LiveDeploymentRecord) => LiveDeploymentRecord) => {
     setLiveDeployments((prev) =>
@@ -263,6 +336,9 @@ export function useDashboardData() {
     try {
       setIntegrationError(null);
       const conn = { ...connection };
+      if (!conn.apiKey.trim() || !conn.projectId.trim()) {
+        throw new Error('Your Lecrev tenant connection is not ready yet. Refresh the page and try again.');
+      }
       const version = await createFunctionVersion(conn, request);
 
       setLiveDeployments((prev) => [
@@ -382,16 +458,24 @@ export function useDashboardData() {
   const saveConnection = useCallback((next: ApiConnection) => {
     setConnection({
       baseUrl: next.baseUrl.trim(),
-      apiKey: next.apiKey.trim() || DEFAULT_CONNECTION.apiKey,
-      projectId: next.projectId.trim() || DEFAULT_CONNECTION.projectId,
+      apiKey: connection.apiKey,
+      projectId: connection.projectId,
     });
     setIntegrationError(null);
-  }, []);
+  }, [connection.apiKey, connection.projectId]);
 
   const handleSignOut = useCallback(async () => {
     try {
       await authClient.signOut();
       await refetchSession();
+      setConnection((current) => ({
+        baseUrl: current.baseUrl || DEFAULT_CONNECTION.baseUrl,
+        apiKey: '',
+        projectId: '',
+      }));
+      setBackendProjects([]);
+      setBackendDeployments([]);
+      setLiveDeployments([]);
     } catch (err) {
       setIntegrationError(err instanceof Error ? err.message : 'Unable to sign out.');
     }
@@ -405,6 +489,7 @@ export function useDashboardData() {
     githubConfigured,
     activeUser,
     isSessionPending,
+    isConnectionPending,
     authRequired,
     projectRows,
     deploymentRows,

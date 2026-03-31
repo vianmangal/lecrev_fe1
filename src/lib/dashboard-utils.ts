@@ -6,8 +6,8 @@ export const FALLBACK_REGIONS = ['ap-south-1', 'ap-south-2', 'ap-southeast-1'];
 
 export const DEFAULT_CONNECTION: ApiConnection = {
   baseUrl: (import.meta.env.VITE_LECREV_API_BASE_URL ?? '').trim(),
-  apiKey: (import.meta.env.VITE_LECREV_API_KEY ?? 'dev-root-key').trim() || 'dev-root-key',
-  projectId: (import.meta.env.VITE_LECREV_PROJECT_ID ?? 'demo').trim() || 'demo',
+  apiKey: '',
+  projectId: '',
 };
 
 export function loadConnection(): ApiConnection {
@@ -16,11 +16,11 @@ export function loadConnection(): ApiConnection {
     if (!raw) {
       return DEFAULT_CONNECTION;
     }
-    const parsed = JSON.parse(raw) as Partial<ApiConnection>;
+    const parsed = JSON.parse(raw) as Partial<Pick<ApiConnection, 'baseUrl'>>;
     return {
       baseUrl: parsed.baseUrl ?? DEFAULT_CONNECTION.baseUrl,
-      apiKey: parsed.apiKey ?? DEFAULT_CONNECTION.apiKey,
-      projectId: parsed.projectId ?? DEFAULT_CONNECTION.projectId,
+      apiKey: DEFAULT_CONNECTION.apiKey,
+      projectId: DEFAULT_CONNECTION.projectId,
     };
   } catch {
     return DEFAULT_CONNECTION;
@@ -28,7 +28,9 @@ export function loadConnection(): ApiConnection {
 }
 
 export function persistConnection(connection: ApiConnection): void {
-  window.localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify(connection));
+  window.localStorage.setItem(CONNECTION_STORAGE_KEY, JSON.stringify({
+    baseUrl: connection.baseUrl,
+  }));
 }
 
 export function classifyLogLevel(line: string): LogEntry['level'] {

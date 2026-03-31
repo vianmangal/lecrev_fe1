@@ -34,6 +34,10 @@ export default defineConfig(({mode}) => {
           target: authTarget,
           changeOrigin: true,
         },
+        '/api/lecrev': {
+          target: authTarget,
+          changeOrigin: true,
+        },
         '/v1': {
           target: apiTarget,
           changeOrigin: true,

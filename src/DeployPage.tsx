@@ -66,7 +66,10 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
     }
 
     const selectedRegion = region.trim() || regionOptions[0] || 'ap-south-1';
-    const cleanedProject = defaultProjectId.trim() || 'default-project';
+    const cleanedProject = defaultProjectId.trim();
+    if (!cleanedProject) {
+      throw new Error('Your tenant project is not ready yet. Refresh the page and try again.');
+    }
     const cleanedName = sanitizeName(mode === 'file' ? (file?.name || 'uploaded-function') : 'ui-function');
 
     if (mode === 'file') {
@@ -119,7 +122,10 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
     setIsSubmitting(true);
     try {
       const selectedRegion = region.trim() || regionOptions[0] || 'ap-south-1';
-      const cleanedProject = defaultProjectId.trim() || 'default-project';
+      const cleanedProject = defaultProjectId.trim();
+      if (!cleanedProject) {
+        throw new Error('Your tenant project is not ready yet. Refresh the page and try again.');
+      }
       const request: DeployRequestInput = {
         projectId: cleanedProject,
         name: sanitizeName(submission.functionName || submission.repoFullName.replace(/\//g, '-')),

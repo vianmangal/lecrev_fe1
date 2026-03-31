@@ -1,6 +1,10 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import express from 'express';
+import {
+  getAuthenticatedGitHubAccessToken,
+  getAuthenticatedSessionUser,
+} from './auth-session';
 
 const GITHUB_API_BASE_URL = 'https://api.github.com';
 const githubAppID = (process.env.GITHUB_APP_ID ?? '').trim();
@@ -14,9 +18,15 @@ interface GitHubAppMetadataPayload {
 }
 
 interface GitHubAccountPayload {
+  id?: number;
   login?: string;
   avatar_url?: string;
   type?: string;
+}
+
+export interface GitHubViewerPayload {
+  id?: number;
+  login?: string;
 }
 
 interface GitHubInstallationPayload {
@@ -116,18 +126,6 @@ async function getAppMetadata(): Promise<GitHubAppMetadataPayload> {
   return githubRequest('/app', {}, createAppJWT());
 }
 
-async function listInstallations(): Promise<GitHubInstallationPayload[]> {
-  const payload = await githubRequest<GitHubInstallationsResponse | GitHubInstallationPayload[]>(
-    '/app/installations?per_page=100',
-    {},
-    createAppJWT(),
-  );
-  if (Array.isArray(payload)) {
-    return payload;
-  }
-  return payload.installations ?? [];
-}
-
 async function resolveInstallationID(owner: string, repo: string): Promise<number> {
   const payload = await githubRequest<{ id: number }>(`/repos/${owner}/${repo}/installation`, {}, createAppJWT());
   return payload.id;
@@ -142,43 +140,56 @@ async function createInstallationToken(installationID: number): Promise<string> 
   return payload.token;
 }
 
-async function withInstallationToken<T>(owner: string, repo: string, fn: (token: string, installationID: number) => Promise<T>): Promise<T> {
-  const installationID = await resolveInstallationID(owner, repo);
-  const installationToken = await createInstallationToken(installationID);
-  return fn(installationToken, installationID);
-}
-
 async function withKnownInstallationToken<T>(installationID: number, fn: (token: string) => Promise<T>): Promise<T> {
   const installationToken = await createInstallationToken(installationID);
   return fn(installationToken);
 }
 
-async function listInstallationRepositories(installationID: number): Promise<GitHubInstallationRepositoriesResponse> {
-  return withKnownInstallationToken(installationID, async (token) => {
-    const repositories: GitHubRepoPayload[] = [];
-    const perPage = 100;
-    let totalCount = 0;
-
-    for (let page = 1; page <= 100; page += 1) {
-      const payload = await githubRequest<GitHubInstallationRepositoriesResponse>(
-        `/installation/repositories?per_page=${perPage}&page=${page}`,
-        {},
-        token,
-      );
-      const nextPage = payload.repositories ?? [];
-      totalCount = payload.total_count ?? totalCount;
-      repositories.push(...nextPage);
-
-      if (nextPage.length < perPage) {
-        break;
-      }
+async function listUserInstallations(accessToken: string): Promise<GitHubInstallationPayload[]> {
+  const installations: GitHubInstallationPayload[] = [];
+  const perPage = 100;
+  for (let page = 1; page <= 100; page += 1) {
+    const payload = await githubRequest<GitHubInstallationsResponse | GitHubInstallationPayload[]>(
+      `/user/installations?per_page=${perPage}&page=${page}`,
+      {},
+      accessToken,
+    );
+    const nextPage = Array.isArray(payload) ? payload : (payload.installations ?? []);
+    installations.push(...nextPage);
+    if (nextPage.length < perPage) {
+      break;
     }
+  }
+  return installations;
+}
 
-    return {
-      total_count: totalCount || repositories.length,
-      repositories,
-    };
-  });
+async function listUserInstallationRepositories(accessToken: string, installationID: number): Promise<GitHubInstallationRepositoriesResponse> {
+  const repositories: GitHubRepoPayload[] = [];
+  const perPage = 100;
+  let totalCount = 0;
+
+  for (let page = 1; page <= 100; page += 1) {
+    const payload = await githubRequest<GitHubInstallationRepositoriesResponse>(
+      `/user/installations/${installationID}/repositories?per_page=${perPage}&page=${page}`,
+      {},
+      accessToken,
+    );
+    const nextPage = payload.repositories ?? [];
+    totalCount = payload.total_count ?? totalCount;
+    repositories.push(...nextPage);
+    if (nextPage.length < perPage) {
+      break;
+    }
+  }
+
+  return {
+    total_count: totalCount || repositories.length,
+    repositories,
+  };
+}
+
+export async function getGitHubViewer(accessToken: string): Promise<GitHubViewerPayload> {
+  return githubRequest<GitHubViewerPayload>('/user', {}, accessToken);
 }
 
 function sendGitHubError(res: express.Response, error: unknown) {
@@ -186,6 +197,10 @@ function sendGitHubError(res: express.Response, error: unknown) {
   const lower = message.toLowerCase();
   if (lower.includes('installation') || lower.includes('not found') || lower.includes('"message":"not found"')) {
     res.status(404).json({ error: 'GitHub App is not installed on this repository or the repository could not be found.' });
+    return;
+  }
+  if (lower.includes('forbidden') || lower.includes('resource not accessible')) {
+    res.status(403).json({ error: 'Your GitHub session does not have access to this installation or repository. Sign in again after granting the requested scopes.' });
     return;
   }
   if (lower.includes('rate limit')) {
@@ -320,6 +335,57 @@ async function maybeReadPackageManifest(owner: string, repo: string, ref: string
   }
 }
 
+async function resolveAuthorizedGitHubContext(req: express.Request) {
+  const [sessionUser, tokenPayload] = await Promise.all([
+    getAuthenticatedSessionUser(req),
+    getAuthenticatedGitHubAccessToken(req),
+  ]);
+
+  if (!sessionUser?.id || !tokenPayload?.accessToken) {
+    return null;
+  }
+
+  return {
+    user: sessionUser,
+    accessToken: tokenPayload.accessToken,
+    scopes: tokenPayload.scopes,
+  };
+}
+
+export async function loadAuthorizedRepository(req: express.Request, owner: string, repo: string) {
+  const context = await resolveAuthorizedGitHubContext(req);
+  if (!context) {
+    return null;
+  }
+
+  const installationId = await resolveInstallationID(owner, repo);
+  const installations = await listUserInstallations(context.accessToken);
+  if (!installations.some((installation) => installation.id === installationId)) {
+    const error = new Error('resource not accessible by integration');
+    throw error;
+  }
+
+  const repositoriesPayload = await listUserInstallationRepositories(context.accessToken, installationId);
+  const repository = (repositoriesPayload.repositories ?? [])
+    .map((entry) => normalizeRepository(entry, installationId))
+    .find((entry) => entry.fullName.toLowerCase() === `${owner}/${repo}`.toLowerCase());
+
+  if (!repository) {
+    const error = new Error('resource not accessible by integration');
+    throw error;
+  }
+
+  return {
+    context,
+    installationId,
+    repository,
+  };
+}
+
+function sendUnauthorized(res: express.Response) {
+  res.status(401).json({ error: 'Sign in with GitHub to access repository installations.' });
+}
+
 export function createGitHubAppRouter() {
   const router = express.Router();
 
@@ -342,15 +408,23 @@ export function createGitHubAppRouter() {
     }
   });
 
-  router.get('/installations', async (_req, res) => {
+  router.get('/installations', async (req, res) => {
     if (!isGithubAppConfigured) {
       res.json({ configured: false, installations: [] });
       return;
     }
+
+    const context = await resolveAuthorizedGitHubContext(req);
+    if (!context) {
+      sendUnauthorized(res);
+      return;
+    }
+
     try {
-      const installations = await listInstallations();
+      const installations = await listUserInstallations(context.accessToken);
       res.json({
         configured: true,
+        userId: context.user.id,
         installations: installations.map(normalizeInstallation),
       });
     } catch (error) {
@@ -365,43 +439,26 @@ export function createGitHubAppRouter() {
       return;
     }
 
+    const context = await resolveAuthorizedGitHubContext(req);
+    if (!context) {
+      sendUnauthorized(res);
+      return;
+    }
+
     const pageParam = `${req.query.page ?? ''}`.trim();
     const page = parsePositiveInt(pageParam, 1, 1000);
     const perPage = parsePositiveInt(req.query.perPage, 100, 100);
     const query = `${req.query.q ?? ''}`.trim().toLowerCase();
 
     try {
-      if (!pageParam) {
-        const payload = await listInstallationRepositories(installationID);
-        const repositories = (payload.repositories ?? [])
-          .map((repo) => normalizeRepository(repo, installationID))
-          .filter((repo) => {
-            if (!query) {
-              return true;
-            }
-            return repo.fullName.toLowerCase().includes(query);
-          });
-
-        res.json({
-          installationId: installationID,
-          page: 1,
-          perPage: repositories.length,
-          totalCount: payload.total_count ?? repositories.length,
-          hasNextPage: false,
-          repositories,
-        });
+      const installations = await listUserInstallations(context.accessToken);
+      if (!installations.some((installation) => installation.id === installationID)) {
+        res.status(403).json({ error: 'This installation is not accessible to the signed-in user.' });
         return;
       }
 
-      const payload = await withKnownInstallationToken(installationID, async (token) => (
-        githubRequest<GitHubInstallationRepositoriesResponse>(
-          `/installation/repositories?per_page=${perPage}&page=${page}`,
-          {},
-          token,
-        )
-      ));
-
-      const repositories = (payload.repositories ?? [])
+      const payload = await listUserInstallationRepositories(context.accessToken, installationID);
+      const filtered = (payload.repositories ?? [])
         .map((repo) => normalizeRepository(repo, installationID))
         .filter((repo) => {
           if (!query) {
@@ -410,13 +467,27 @@ export function createGitHubAppRouter() {
           return repo.fullName.toLowerCase().includes(query);
         });
 
+      if (!pageParam) {
+        res.json({
+          installationId: installationID,
+          page: 1,
+          perPage: filtered.length,
+          totalCount: filtered.length,
+          hasNextPage: false,
+          repositories: filtered,
+        });
+        return;
+      }
+
+      const start = (page - 1) * perPage;
+      const end = start + perPage;
       res.json({
         installationId: installationID,
         page,
         perPage,
-        totalCount: payload.total_count ?? repositories.length,
-        hasNextPage: (payload.repositories?.length ?? 0) === perPage,
-        repositories,
+        totalCount: filtered.length,
+        hasNextPage: end < filtered.length,
+        repositories: filtered.slice(start, end),
       });
     } catch (error) {
       sendGitHubError(res, error);
@@ -425,13 +496,12 @@ export function createGitHubAppRouter() {
 
   router.get('/repos/:owner/:repo', async (req, res) => {
     try {
-      const payload = await withInstallationToken(req.params.owner, req.params.repo, async (token, installationID) => (
-        normalizeRepository(
-          await githubRequest<GitHubRepoPayload>(`/repos/${req.params.owner}/${req.params.repo}`, {}, token),
-          installationID,
-        )
-      ));
-      res.json(payload);
+      const authorized = await loadAuthorizedRepository(req, req.params.owner, req.params.repo);
+      if (!authorized) {
+        sendUnauthorized(res);
+        return;
+      }
+      res.json(authorized.repository);
     } catch (error) {
       sendGitHubError(res, error);
     }
@@ -441,12 +511,14 @@ export function createGitHubAppRouter() {
     const requestedRef = `${req.query.ref ?? ''}`.trim();
 
     try {
-      const payload = await withInstallationToken(req.params.owner, req.params.repo, async (token, installationID) => {
-        const repo = normalizeRepository(
-          await githubRequest<GitHubRepoPayload>(`/repos/${req.params.owner}/${req.params.repo}`, {}, token),
-          installationID,
-        );
-        const ref = requestedRef || repo.defaultBranch || 'main';
+      const authorized = await loadAuthorizedRepository(req, req.params.owner, req.params.repo);
+      if (!authorized) {
+        sendUnauthorized(res);
+        return;
+      }
+
+      const payload = await withKnownInstallationToken(authorized.installationId, async (token) => {
+        const ref = requestedRef || authorized.repository.defaultBranch || 'main';
         const tree = await githubRequest<GitHubTreePayload>(
           `/repos/${req.params.owner}/${req.params.repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`,
           {},
@@ -456,11 +528,11 @@ export function createGitHubAppRouter() {
         const entrypointCandidates = deriveEntrypointCandidates(tree.tree, packageManifest);
 
         return {
-          repository: repo,
+          repository: authorized.repository,
           ref,
           entrypointCandidates,
           suggestedEntrypoint: entrypointCandidates[0] ?? '',
-          suggestedFunctionName: repo.repo.replace(/[^a-zA-Z0-9-_]+/g, '-').toLowerCase(),
+          suggestedFunctionName: authorized.repository.repo.replace(/[^a-zA-Z0-9-_]+/g, '-').toLowerCase(),
         };
       });
       res.json(payload);
@@ -471,8 +543,14 @@ export function createGitHubAppRouter() {
 
   router.get('/repos/:owner/:repo/git/trees/:ref', async (req, res) => {
     try {
+      const authorized = await loadAuthorizedRepository(req, req.params.owner, req.params.repo);
+      if (!authorized) {
+        sendUnauthorized(res);
+        return;
+      }
+
       const recursiveQuery = req.query.recursive ? '?recursive=1' : '';
-      const payload = await withInstallationToken(req.params.owner, req.params.repo, async (token) => (
+      const payload = await withKnownInstallationToken(authorized.installationId, async (token) => (
         githubRequest(`/repos/${req.params.owner}/${req.params.repo}/git/trees/${encodeURIComponent(req.params.ref)}${recursiveQuery}`, {}, token)
       ));
       res.json(payload);
@@ -489,9 +567,15 @@ export function createGitHubAppRouter() {
     }
 
     try {
+      const authorized = await loadAuthorizedRepository(req, req.params.owner, req.params.repo);
+      if (!authorized) {
+        sendUnauthorized(res);
+        return;
+      }
+
       const ref = `${req.query.ref ?? ''}`.trim();
       const suffix = ref ? `?ref=${encodeURIComponent(ref)}` : '';
-      const payload = await withInstallationToken(req.params.owner, req.params.repo, async (token) => (
+      const payload = await withKnownInstallationToken(authorized.installationId, async (token) => (
         githubRequest(`/repos/${req.params.owner}/${req.params.repo}/contents/${filePath}${suffix}`, {}, token)
       ));
       res.json(payload);

@@ -251,6 +251,10 @@ function buildQuery(options?: ListDeploymentsOptions): string {
 }
 
 async function request<T>(connection: ApiConnection, method: string, path: string, body?: unknown): Promise<T> {
+  if (!connection.apiKey.trim()) {
+    throw new Error('Your Lecrev tenant connection is not ready yet.');
+  }
+
   const response = await fetch(joinURL(connection.baseUrl, path), {
     method,
     headers: {

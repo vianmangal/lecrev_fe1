@@ -6,16 +6,20 @@ import {
   createGitFunctionVersion,
   getBuildJob,
   getFunctionVersion,
+  LecrevServerConnection,
 } from './lecrev-api';
 import {
   CreateGitHubDeploymentRunInput,
   createGitHubDeploymentRun,
   findBindingsForPush,
-  listGitHubRepoBindings,
+  getGitHubUserConnection,
+  listGitHubRepoBindingsByUser,
   listPendingGitHubDeploymentRuns,
   markGitHubDeploymentRunState,
   upsertGitHubRepoBinding,
 } from './github-deployments-store';
+import { getAuthenticatedSessionUser } from './auth-session';
+import { loadAuthorizedRepository } from './github-app';
 
 const GITHUB_API_BASE_URL = 'https://api.github.com';
 const githubAppID = (process.env.GITHUB_APP_ID ?? '').trim();
@@ -140,6 +144,18 @@ function buildTargetURL(buildJobId?: string, functionVersionId?: string): string
   return publicAPIBaseURL;
 }
 
+function connectionForUser(userId: string): LecrevServerConnection {
+  const connection = getGitHubUserConnection(userId);
+  if (!connection) {
+    throw new Error(`No Lecrev tenant connection exists for user ${userId}.`);
+  }
+
+  return {
+    apiKey: connection.apiKey,
+    projectId: connection.projectId,
+  };
+}
+
 async function postCommitStatus(installationId: number, owner: string, repo: string, commitSha: string, input: {
   state: 'pending' | 'success' | 'failure' | 'error';
   description: string;
@@ -189,6 +205,7 @@ async function triggerBindingDeploy(input: {
   binding: ReturnType<typeof findBindingsForPush>[number];
   commitSha: string;
 }): Promise<CreateGitHubDeploymentRunInput> {
+  const connection = connectionForUser(input.binding.userId);
   const deployInput: CreateGitFunctionVersionInput = {
     projectId: input.binding.projectId,
     name: input.binding.functionName,
@@ -200,10 +217,12 @@ async function triggerBindingDeploy(input: {
     idempotencyKey: `github-push-${input.binding.id}-${input.commitSha}`,
   };
 
-  const version = await createGitFunctionVersion(deployInput);
+  const version = await createGitFunctionVersion(connection, deployInput);
   const targetUrl = buildTargetURL(version.buildJobId, version.id);
 
   upsertGitHubRepoBinding({
+    userId: input.binding.userId,
+    tenantId: input.binding.tenantId,
     installationId: input.binding.installationId,
     owner: input.binding.owner,
     repo: input.binding.repo,
@@ -223,6 +242,9 @@ async function triggerBindingDeploy(input: {
 
   return {
     bindingId: input.binding.id,
+    userId: input.binding.userId,
+    tenantId: input.binding.tenantId,
+    projectId: input.binding.projectId,
     installationId: input.binding.installationId,
     owner: input.binding.owner,
     repo: input.binding.repo,
@@ -240,9 +262,10 @@ async function pollPendingRuns(): Promise<void> {
   const pendingRuns = listPendingGitHubDeploymentRuns();
   for (const run of pendingRuns) {
     try {
+      const connection = connectionForUser(run.userId);
       const [version, buildJob] = await Promise.all([
-        getFunctionVersion(run.functionVersionId),
-        run.buildJobId ? getBuildJob(run.buildJobId) : Promise.resolve(undefined),
+        getFunctionVersion(connection, run.functionVersionId),
+        run.buildJobId ? getBuildJob(connection, run.buildJobId) : Promise.resolve(undefined),
       ]);
 
       if ((buildJob && buildJob.state === 'failed') || version.state === 'failed') {
@@ -378,11 +401,22 @@ export function createGitHubDeploymentRouter() {
 
   router.use(express.json());
 
-  router.get('/deployments/bindings', (_req, res) => {
-    res.json(listGitHubRepoBindings());
+  router.get('/deployments/bindings', async (req, res) => {
+    const user = await getAuthenticatedSessionUser(req);
+    if (!user?.id) {
+      res.status(401).json({ error: 'Sign in to view GitHub deployment bindings.' });
+      return;
+    }
+    res.json(listGitHubRepoBindingsByUser(user.id));
   });
 
-  router.post('/deployments/bindings', (req, res) => {
+  router.post('/deployments/bindings', async (req, res) => {
+    const user = await getAuthenticatedSessionUser(req);
+    if (!user?.id) {
+      res.status(401).json({ error: 'Sign in to manage GitHub deployment bindings.' });
+      return;
+    }
+
     const body = req.body as Partial<{
       installationId: number;
       owner: string;
@@ -401,30 +435,59 @@ export function createGitHubDeploymentRouter() {
       lastCommitSha?: string;
     }>;
 
-    if (!body.installationId || !body.owner || !body.repo || !body.repoFullName || !body.gitUrl || !body.gitRef || !body.entrypoint || !body.functionName) {
-      res.status(400).json({ error: 'installationId, owner, repo, repoFullName, gitUrl, gitRef, entrypoint, and functionName are required.' });
+    if (!body.installationId || !body.owner || !body.repo || !body.gitRef || !body.entrypoint || !body.functionName) {
+      res.status(400).json({ error: 'installationId, owner, repo, gitRef, entrypoint, and functionName are required.' });
       return;
     }
 
-    const binding = upsertGitHubRepoBinding({
-      installationId: body.installationId,
-      owner: body.owner,
-      repo: body.repo,
-      repoFullName: body.repoFullName,
-      gitUrl: body.gitUrl,
-      gitRef: body.gitRef,
-      entrypoint: body.entrypoint,
-      projectId: body.projectId?.trim() || 'demo',
-      functionName: body.functionName,
-      environment: body.environment ?? 'production',
-      region: body.region?.trim() || 'ap-south-1',
-      autoDeploy: body.autoDeploy !== false,
-      lastFunctionVersionId: body.lastFunctionVersionId,
-      lastBuildJobId: body.lastBuildJobId,
-      lastCommitSha: body.lastCommitSha,
-    });
+    try {
+      const authorized = await loadAuthorizedRepository(req, body.owner, body.repo);
+      if (!authorized) {
+        res.status(401).json({ error: 'Sign in with GitHub to access repository bindings.' });
+        return;
+      }
+      if (authorized.installationId !== body.installationId) {
+        res.status(403).json({ error: 'The selected installation does not match the signed-in user’s repository access.' });
+        return;
+      }
 
-    res.status(201).json(binding);
+      const connection = getGitHubUserConnection(user.id);
+      if (!connection) {
+        res.status(409).json({ error: 'Lecrev session connection is not ready yet. Refresh the page and try again.' });
+        return;
+      }
+
+      const requestedProjectId = body.projectId?.trim();
+      if (requestedProjectId && requestedProjectId !== connection.projectId) {
+        res.status(403).json({ error: 'GitHub deployment bindings are restricted to the signed-in user’s tenant project.' });
+        return;
+      }
+
+      const binding = upsertGitHubRepoBinding({
+        userId: user.id,
+        tenantId: connection.tenantId,
+        installationId: authorized.installationId,
+        owner: authorized.repository.owner,
+        repo: authorized.repository.repo,
+        repoFullName: authorized.repository.fullName,
+        gitUrl: authorized.repository.gitUrl ?? body.gitUrl,
+        gitRef: body.gitRef,
+        entrypoint: body.entrypoint,
+        projectId: connection.projectId,
+        functionName: body.functionName,
+        environment: body.environment ?? 'production',
+        region: body.region?.trim() || 'ap-south-1',
+        autoDeploy: body.autoDeploy !== false,
+        lastFunctionVersionId: body.lastFunctionVersionId,
+        lastBuildJobId: body.lastBuildJobId,
+        lastCommitSha: body.lastCommitSha,
+      });
+
+      res.status(201).json(binding);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to register GitHub deployment binding.';
+      res.status(502).json({ error: message });
+    }
   });
 
   return router;

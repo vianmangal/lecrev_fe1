@@ -20,7 +20,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open `http://localhost:3000`. `npm run dev` now starts both the Vite frontend and the Better Auth server. The Vite dev server proxies `/v1` to `http://localhost:8080` and `/api/auth` to the local Better Auth server by default.
+Open `http://localhost:3000`. `npm run dev` now starts both the Vite frontend and the Better Auth server. The Vite dev server proxies `/v1` to `http://localhost:8080`, `/api/auth` to the local Better Auth server, and `/api/lecrev` for session-managed tenant provisioning.
 The auth service also serves `/api/github/*` for GitHub App repo discovery, binding persistence, and webhook-triggered git deploys.
 
 ## Production Build
@@ -32,8 +32,8 @@ cp env.production.example .env.production
 npm run build
 ```
 
-Keep `VITE_LECREV_API_BASE_URL` blank so the built frontend uses same-origin `/v1` requests through nginx.
-Set `LECREV_API_KEY`, `GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY_PATH`, and `GITHUB_WEBHOOK_SECRET` in the deployed auth env if you want GitHub repo picking and auto-deploy on push.
+Set `VITE_LECREV_API_BASE_URL` to your public API hostname if the frontend and API are on different origins.
+Set `LECREV_POSTGRES_DSN`, `GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY_PATH`, and `GITHUB_WEBHOOK_SECRET` in the deployed auth env if you want tenant-scoped GitHub repo picking and auto-deploy on push.
 
 ## Local Environment
 
@@ -51,13 +51,10 @@ GITHUB_APP_ID="your-github-app-id"
 GITHUB_PRIVATE_KEY_PATH="./github-app.private-key.pem"
 GITHUB_WEBHOOK_SECRET="replace-this-with-a-long-random-secret"
 LECREV_API_TARGET="http://localhost:8080"
-LECREV_API_KEY="dev-root-key"
+LECREV_POSTGRES_DSN="postgres://lecrev:lecrev@localhost:5432/lecrev?sslmode=disable"
 LECREV_PUBLIC_API_URL="http://localhost:8080"
-LECREV_DEFAULT_PROJECT_ID="demo"
 GITHUB_APP_DB_PATH="./data/github-app.sqlite"
 VITE_LECREV_API_BASE_URL=""
-VITE_LECREV_API_KEY="dev-root-key"
-VITE_LECREV_PROJECT_ID="demo"
 ```
 
 ## GitHub OAuth Setup
@@ -68,6 +65,7 @@ Create a GitHub OAuth app and configure these values:
 - Authorization callback URL: `http://localhost:3000/api/auth/callback/github`
 
 After that, copy the client ID and client secret into `.env.local`.
+The sign-in flow should request `read:user`, `user:email`, `read:org`, and `repo` so the repo picker can be filtered to the signed-in user’s accessible GitHub App installations and repositories.
 
 ## GitHub App Setup
 
@@ -84,11 +82,12 @@ For repo discovery and auto-deploy from push events, configure the GitHub App wi
   - Deployments: read/write
   - Pull requests: read-only
 
-The frontend deploy screen now lists repositories directly from the GitHub App installation instead of requiring manual `owner/repo` input. After a successful GitHub-backed deploy, the auth service persists an auto-deploy binding so later `push` webhooks can trigger a new control-plane git deploy automatically and update the GitHub commit status.
+The frontend deploy screen now lists repositories only from the signed-in user’s accessible GitHub App installations instead of a global app installation view. After a successful GitHub-backed deploy, the auth service persists a user-scoped auto-deploy binding so later `push` webhooks can trigger a new control-plane git deploy automatically and update the GitHub commit status.
 
 ## What the Dashboard Does
 
 - Loads regions, projects, and deployment summaries from the backend APIs.
+- Provisions a tenant-scoped control-plane API key and default project for the signed-in GitHub user.
 - Creates a new function version through `POST /v1/projects/{project}/functions`.
 - Polls build and function status until the version is ready.
 - Auto-invokes the function through `POST /v1/functions/{versionId}/invoke`.
@@ -99,4 +98,4 @@ The frontend deploy screen now lists repositories directly from the GitHub App i
 - Runtime: `node22`
 - Regions: `ap-south-1`, `ap-south-2`, `ap-southeast-1`
 - Frontend auth now uses Better Auth with the GitHub social provider.
-- The control-plane connection form still uses the existing `X-API-Key` integration for backend API access.
+- The browser no longer uses a shared admin API key or a shared `demo` project by default.

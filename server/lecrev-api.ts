@@ -1,6 +1,9 @@
 const apiTarget = (process.env.LECREV_API_TARGET ?? 'http://127.0.0.1:8080').trim().replace(/\/+$/, '');
-const apiKey = (process.env.LECREV_API_KEY ?? process.env.VITE_LECREV_API_KEY ?? '').trim();
-const defaultProjectID = (process.env.LECREV_DEFAULT_PROJECT_ID ?? process.env.VITE_LECREV_PROJECT_ID ?? 'demo').trim() || 'demo';
+
+export interface LecrevServerConnection {
+  apiKey: string;
+  projectId: string;
+}
 
 export interface LecrevFunctionVersion {
   id: string;
@@ -25,20 +28,23 @@ export interface CreateGitFunctionVersionInput {
   idempotencyKey: string;
 }
 
-function assertConfigured() {
-  if (!apiKey) {
-    throw new Error('Lecrev API key is not configured. Set LECREV_API_KEY or VITE_LECREV_API_KEY.');
+function assertConfigured(connection: LecrevServerConnection) {
+  if (!connection.apiKey.trim()) {
+    throw new Error('Lecrev API key is not configured for this user session.');
+  }
+  if (!connection.projectId.trim()) {
+    throw new Error('Lecrev project is not configured for this user session.');
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  assertConfigured();
+async function request<T>(connection: LecrevServerConnection, method: string, path: string, body?: unknown): Promise<T> {
+  assertConfigured(connection);
 
   const response = await fetch(`${apiTarget}${path}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key': apiKey,
+      'X-API-Key': connection.apiKey,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -51,13 +57,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return raw ? JSON.parse(raw) as T : (undefined as T);
 }
 
-export function getLecrevDefaultProjectID(): string {
-  return defaultProjectID;
-}
-
-export async function createGitFunctionVersion(input: CreateGitFunctionVersionInput): Promise<LecrevFunctionVersion> {
-  const projectId = input.projectId?.trim() || defaultProjectID;
-  return request<LecrevFunctionVersion>('POST', `/v1/projects/${projectId}/functions`, {
+export async function createGitFunctionVersion(connection: LecrevServerConnection, input: CreateGitFunctionVersionInput): Promise<LecrevFunctionVersion> {
+  const projectId = input.projectId?.trim() || connection.projectId;
+  return request<LecrevFunctionVersion>(connection, 'POST', `/v1/projects/${projectId}/functions`, {
     name: input.name,
     environment: input.environment,
     runtime: 'node22',
@@ -80,10 +82,10 @@ export async function createGitFunctionVersion(input: CreateGitFunctionVersionIn
   });
 }
 
-export async function getFunctionVersion(versionId: string): Promise<LecrevFunctionVersion> {
-  return request<LecrevFunctionVersion>('GET', `/v1/functions/${versionId}`);
+export async function getFunctionVersion(connection: LecrevServerConnection, versionId: string): Promise<LecrevFunctionVersion> {
+  return request<LecrevFunctionVersion>(connection, 'GET', `/v1/functions/${versionId}`);
 }
 
-export async function getBuildJob(buildJobId: string): Promise<LecrevBuildJob> {
-  return request<LecrevBuildJob>('GET', `/v1/build-jobs/${buildJobId}`);
+export async function getBuildJob(connection: LecrevServerConnection, buildJobId: string): Promise<LecrevBuildJob> {
+  return request<LecrevBuildJob>(connection, 'GET', `/v1/build-jobs/${buildJobId}`);
 }
