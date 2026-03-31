@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { motion } from 'motion/react';
 
 const HERO_PREFIX_TEXT = 'is the best way to implement...';
 const FLIP_WORDS = ['workflows.', 'functions.', 'websites.', 'features.'];
@@ -75,25 +76,28 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
 
   return (
     <div className="min-h-dvh bg-bg text-white font-sans">
-      <button
-        onClick={onSignIn}
-        className="fixed right-4 top-4 z-[90] rounded-full border border-border bg-surface/85 px-4 py-2 text-[10px] uppercase tracking-[0.13em] text-sub shadow-[0_10px_30px_rgba(0,0,0,0.38)] backdrop-blur transition-colors duration-150 hover:border-white hover:text-white sm:right-6 sm:top-5 lg:right-8"
-      >
-        Sign in
-      </button>
+      <header className="fixed top-0 left-0 right-0 z-50 px-4 sm:px-6 lg:px-8 py-4 sm:py-5">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-2.5 text-white">
+            <span className="shrink-0">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2 4L12 21L22 4H2Z" fill="currentColor" />
+              </svg>
+            </span>
+            <span className="font-black text-base tracking-tighter whitespace-nowrap uppercase">LECREV</span>
+          </div>
+          <button
+            onClick={onSignIn}
+            className="rounded-full bg-cyan-primary px-4 sm:px-5 py-2 text-[10px] font-bold uppercase tracking-[0.15em] text-black transition-colors duration-150 hover:bg-cyan-hover"
+          >
+            Get started
+          </button>
+        </div>
+      </header>
 
       <main className="relative overflow-hidden">
-        <div className="pointer-events-none absolute left-4 top-5 z-10 flex items-center gap-2.5 text-white sm:left-6 lg:left-8" aria-hidden="true">
-          <span className="shrink-0">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M2 4L12 21L22 4H2Z" fill="currentColor" />
-            </svg>
-          </span>
-          <span className="font-black text-base tracking-tighter whitespace-nowrap uppercase">LECREV</span>
-        </div>
-
-        <section className="relative min-h-dvh flex items-center">
-          <div className="w-full py-24 sm:py-28">
+        <section className="relative min-h-dvh flex items-center pt-16">
+          <div className="w-full py-16 sm:py-24">
             <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
               <h1 className="mx-auto min-h-[5.75rem] max-w-[1200px] text-center text-2xl font-medium leading-tight tracking-[-0.02em] text-white sm:min-h-[6.75rem] sm:text-4xl md:min-h-[8rem] md:text-5xl lg:whitespace-nowrap xl:max-w-[1400px]">
                 <span className="mr-[0.24em] inline-flex items-center gap-[0.18em] align-baseline">
@@ -104,7 +108,7 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
                   </span>
                   <span className="font-black tracking-tighter uppercase">LECREV</span>
                 </span>
-                {typedText}
+                <span className="block sm:inline">{typedText}</span>
                 {typingComplete && (
                   <span className="flip-word-perspective" aria-hidden="true">
                     <span
@@ -115,11 +119,16 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
                     </span>
                   </span>
                 )}
-              </h1>
+                </h1>
             </div>
 
-            <div className="mx-auto mt-8 w-full max-w-5xl px-4 sm:mt-12 sm:px-6 lg:px-8">
-              <div className="relative aspect-video overflow-hidden rounded-2xl border border-border-md bg-surface shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_30px_80px_rgba(0,0,0,0.55)]">
+            <motion.div
+              initial={{ opacity: 0, y: 40 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.4 }}
+              className="mx-auto mt-12 sm:mt-16 w-full max-w-5xl px-4 sm:px-6 lg:px-8"
+            >
+              <div className="relative aspect-video overflow-hidden rounded-xl sm:rounded-2xl border border-border bg-surface">
                 <video
                   className="absolute inset-0 h-full w-full object-cover"
                   src="/landing-demo.mp4"
@@ -129,26 +138,14 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
                   playsInline
                   preload="metadata"
                 />
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(255,255,255,0.08),transparent_55%)]" />
-                <div className="absolute left-4 top-4 flex gap-2 opacity-70">
-                  <span className="h-2 w-2 rounded-full bg-red-400" />
-                  <span className="h-2 w-2 rounded-full bg-amber-300" />
-                  <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                <div className="absolute left-3 sm:left-4 top-3 sm:top-4 flex gap-1.5 sm:gap-2 opacity-70">
+                  <span className="h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full bg-red-400" />
+                  <span className="h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full bg-amber-300" />
+                  <span className="h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full bg-emerald-400" />
                 </div>
 
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <button
-                    onClick={onSignIn}
-                    aria-label="Play demo"
-                    className="flex h-16 w-16 items-center justify-center rounded-full border border-white/20 bg-black/60 transition-colors duration-150 hover:bg-black/80"
-                  >
-                    <span className="ml-1 block h-0 w-0 border-y-[10px] border-y-transparent border-l-[16px] border-l-white/90" />
-                  </button>
-                </div>
-
-                <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/55 to-transparent" />
               </div>
-            </div>
+            </motion.div>
           </div>
         </section>
       </main>

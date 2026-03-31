@@ -23,6 +23,7 @@ export default function App() {
   const [acctOpen, setAcctOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'signin' | 'register' | null>(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const {
     connection,
@@ -144,6 +145,7 @@ export default function App() {
   const go = (nextScreen: ScreenName) => {
     setScreen(nextScreen);
     setAcctOpen(false);
+    setMobileMenuOpen(false);
   };
 
   const showLanding = !activeUser;
@@ -178,6 +180,8 @@ export default function App() {
             onToggleExpanded={() => setSidebarExpanded((current) => !current)}
             screen={screen}
             onNavigate={(nextScreen) => go(nextScreen)}
+            mobileOpen={mobileMenuOpen}
+            onMobileToggle={() => setMobileMenuOpen((current) => !current)}
           />
 
           <div className="flex-1 flex flex-col overflow-hidden">

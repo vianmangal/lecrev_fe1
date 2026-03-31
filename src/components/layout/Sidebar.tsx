@@ -1,19 +1,24 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Menu, X } from 'lucide-react';
 
 interface SidebarProps {
   expanded: boolean;
   onToggleExpanded: () => void;
   screen: 'projects' | 'deployments' | 'settings' | 'detail' | 'deploy';
   onNavigate: (screen: 'projects' | 'deployments' | 'settings') => void;
+  mobileOpen?: boolean;
+  onMobileToggle?: () => void;
 }
 
-export function Sidebar({ expanded, onToggleExpanded, screen, onNavigate }: SidebarProps) {
-  return (
-    <motion.aside
-      animate={{ width: expanded ? 240 : 64 }}
-      className="border-r border-border flex flex-col py-6 shrink-0 bg-surface/50 backdrop-blur-xl"
-    >
+export function Sidebar({ expanded, onToggleExpanded, screen, onNavigate, mobileOpen = false, onMobileToggle }: SidebarProps) {
+  const handleNavigate = (nextScreen: 'projects' | 'deployments' | 'settings') => {
+    onNavigate(nextScreen);
+    onMobileToggle?.();
+  };
+
+  const sidebarContent = (
+    <>
       <div className={`px-4 mb-10 flex items-center ${expanded ? 'gap-3' : 'justify-center'}`}>
         <div className="text-white shrink-0">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -38,7 +43,7 @@ export function Sidebar({ expanded, onToggleExpanded, screen, onNavigate }: Side
       <div className="flex-1 flex flex-col gap-2 px-3">
         <SideItem
           active={screen === 'projects' || screen === 'detail'}
-          onClick={() => onNavigate('projects')}
+          onClick={() => handleNavigate('projects')}
           expanded={expanded}
           label="Projects"
           icon={(
@@ -52,7 +57,7 @@ export function Sidebar({ expanded, onToggleExpanded, screen, onNavigate }: Side
         />
         <SideItem
           active={screen === 'deployments'}
-          onClick={() => onNavigate('deployments')}
+          onClick={() => handleNavigate('deployments')}
           expanded={expanded}
           label="Deployments"
           icon={(
@@ -71,7 +76,7 @@ export function Sidebar({ expanded, onToggleExpanded, screen, onNavigate }: Side
       <div className="mt-auto flex flex-col gap-2 px-3">
         <SideItem
           active={screen === 'settings'}
-          onClick={() => onNavigate('settings')}
+          onClick={() => handleNavigate('settings')}
           expanded={expanded}
           label="Settings"
           icon={(
@@ -83,7 +88,7 @@ export function Sidebar({ expanded, onToggleExpanded, screen, onNavigate }: Side
         />
         <button
           onClick={onToggleExpanded}
-          className="flex items-center gap-3 p-3 rounded-lg hover:bg-white/5 transition-colors text-muted hover:text-white"
+          className="hidden md:flex items-center gap-3 p-3 rounded-lg hover:bg-white/5 transition-colors text-muted hover:text-white"
         >
           <svg
             width="20"
@@ -99,7 +104,56 @@ export function Sidebar({ expanded, onToggleExpanded, screen, onNavigate }: Side
           {expanded && <span className="text-sm font-medium">Collapse</span>}
         </button>
       </div>
-    </motion.aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile Menu Button */}
+      <button
+        onClick={onMobileToggle}
+        className="md:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-surface/90 border border-border backdrop-blur-sm text-white hover:bg-surface transition-colors"
+        aria-label="Toggle menu"
+      >
+        {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+      </button>
+
+      {/* Mobile Overlay */}
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onMobileToggle}
+            className="md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Mobile Sidebar */}
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.aside
+            initial={{ x: -280 }}
+            animate={{ x: 0 }}
+            exit={{ x: -280 }}
+            transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+            className="md:hidden fixed left-0 top-0 bottom-0 z-50 w-[260px] border-r border-border flex flex-col py-6 bg-surface/95 backdrop-blur-xl"
+          >
+            {sidebarContent}
+          </motion.aside>
+        )}
+      </AnimatePresence>
+
+      {/* Desktop Sidebar */}
+      <motion.aside
+        animate={{ width: expanded ? 240 : 64 }}
+        className="hidden md:flex border-r border-border flex-col py-6 shrink-0 bg-surface/50 backdrop-blur-xl"
+      >
+        {sidebarContent}
+      </motion.aside>
+    </>
   );
 }
 
