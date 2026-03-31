@@ -12,6 +12,7 @@ if (!fs.existsSync(dbDir)) {
 }
 
 const db = new DatabaseSync(dbPath);
+db.exec('pragma foreign_keys = on;');
 
 const createBindingsTableSQL = `
   create table if not exists github_repo_bindings (
@@ -70,6 +71,11 @@ const createRunsTableSQL = `
 function columnNames(tableName: string): Set<string> {
   const rows = db.prepare(`pragma table_info(${tableName})`).all() as Array<{ name?: unknown }>;
   return new Set(rows.map((row) => String(row.name ?? '')));
+}
+
+function foreignKeyTables(tableName: string): Set<string> {
+  const rows = db.prepare(`pragma foreign_key_list(${tableName})`).all() as Array<{ table?: unknown }>;
+  return new Set(rows.map((row) => String(row.table ?? '')));
 }
 
 function tableExists(tableName: string): boolean {
@@ -150,23 +156,78 @@ function migrateRunsTable(): void {
     db.exec(createRunsTableSQL);
   } else {
     const columns = columnNames('github_deployment_runs');
-    if (!columns.has('user_id')) {
-      db.exec(`alter table github_deployment_runs add column user_id text not null default 'legacy';`);
-    }
-    if (!columns.has('tenant_id')) {
-      db.exec(`alter table github_deployment_runs add column tenant_id text not null default 'legacy';`);
-    }
-    if (!columns.has('project_id')) {
-      db.exec(`alter table github_deployment_runs add column project_id text not null default 'legacy';`);
-    }
-    if (!columns.has('event_type')) {
-      db.exec(`alter table github_deployment_runs add column event_type text not null default 'push';`);
-    }
-    if (!columns.has('environment')) {
-      db.exec(`alter table github_deployment_runs add column environment text not null default 'production';`);
-    }
-    if (!columns.has('pr_number')) {
-      db.exec(`alter table github_deployment_runs add column pr_number integer;`);
+    const fkTables = foreignKeyTables('github_deployment_runs');
+    const needsRebuild = !columns.has('user_id')
+      || !columns.has('tenant_id')
+      || !columns.has('project_id')
+      || !columns.has('event_type')
+      || !columns.has('environment')
+      || !columns.has('pr_number')
+      || !fkTables.has('github_repo_bindings');
+
+    if (needsRebuild) {
+      const userIDExpr = columns.has('user_id') ? 'user_id' : `'legacy'`;
+      const tenantIDExpr = columns.has('tenant_id') ? 'tenant_id' : `'legacy'`;
+      const projectIDExpr = columns.has('project_id') ? 'project_id' : `'legacy'`;
+      const eventTypeExpr = columns.has('event_type') ? 'event_type' : `'push'`;
+      const environmentExpr = columns.has('environment') ? 'environment' : `'production'`;
+      const prNumberExpr = columns.has('pr_number') ? 'pr_number' : 'null';
+
+      db.exec(`
+        pragma foreign_keys = off;
+        alter table github_deployment_runs rename to github_deployment_runs_legacy;
+        ${createRunsTableSQL}
+        insert into github_deployment_runs (
+          id,
+          binding_id,
+          user_id,
+          tenant_id,
+          project_id,
+          installation_id,
+          owner,
+          repo,
+          repo_full_name,
+          git_ref,
+          commit_sha,
+          event_type,
+          environment,
+          pr_number,
+          function_version_id,
+          build_job_id,
+          state,
+          status_context,
+          target_url,
+          last_error,
+          created_at,
+          updated_at
+        )
+        select
+          id,
+          binding_id,
+          ${userIDExpr},
+          ${tenantIDExpr},
+          ${projectIDExpr},
+          installation_id,
+          owner,
+          repo,
+          repo_full_name,
+          git_ref,
+          commit_sha,
+          ${eventTypeExpr},
+          ${environmentExpr},
+          ${prNumberExpr},
+          function_version_id,
+          build_job_id,
+          state,
+          status_context,
+          target_url,
+          last_error,
+          created_at,
+          updated_at
+        from github_deployment_runs_legacy;
+        drop table github_deployment_runs_legacy;
+        pragma foreign_keys = on;
+      `);
     }
   }
 
@@ -179,6 +240,7 @@ function migrateRunsTable(): void {
 
 migrateBindingsTable();
 migrateRunsTable();
+db.exec('pragma foreign_keys = on;');
 
 db.exec(`
   create table if not exists github_user_connections (
