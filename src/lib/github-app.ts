@@ -51,6 +51,39 @@ export interface GitHubDeploymentBindingInput {
   lastBuildJobId?: string;
 }
 
+export interface GitHubDeploymentBinding {
+  id: string;
+  userId: string;
+  tenantId: string;
+  installationId: number;
+  owner: string;
+  repo: string;
+  repoFullName: string;
+  gitUrl: string;
+  gitRef: string;
+  entrypoint: string;
+  projectId: string;
+  functionName: string;
+  environment: 'production' | 'staging' | 'preview';
+  region: string;
+  autoDeploy: boolean;
+  lastFunctionVersionId?: string;
+  lastBuildJobId?: string;
+  lastCommitSha?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GitHubBindingDeployment {
+  functionVersionId: string;
+  buildJobId?: string;
+}
+
+export interface GitHubDeploymentBindingResponse {
+  binding: GitHubDeploymentBinding;
+  deployment?: GitHubBindingDeployment;
+}
+
 interface GitHubInstallationsResponse {
   configured: boolean;
   installations: GitHubInstallation[];
@@ -110,7 +143,13 @@ export async function inspectGitHubRepository(owner: string, repo: string, ref?:
 }
 
 export async function registerGitHubDeploymentBinding(input: GitHubDeploymentBindingInput): Promise<void> {
-  await fetch('/api/github/deployments/bindings', {
+  await createGitHubDeploymentBinding(input);
+}
+
+export async function createGitHubDeploymentBinding(
+  input: GitHubDeploymentBindingInput & { deployNow?: boolean },
+): Promise<GitHubDeploymentBindingResponse> {
+  return fetch('/api/github/deployments/bindings', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -122,5 +161,6 @@ export async function registerGitHubDeploymentBinding(input: GitHubDeploymentBin
     if (!response.ok) {
       throw new Error(raw.trim() || `GitHub binding registration failed with ${response.status}`);
     }
+    return raw ? JSON.parse(raw) as GitHubDeploymentBindingResponse : ({ binding: undefined } as GitHubDeploymentBindingResponse);
   });
 }

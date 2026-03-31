@@ -113,6 +113,11 @@ export interface ProjectRecord {
   createdAt: string;
 }
 
+export interface CreateProjectInput {
+  id?: string;
+  name: string;
+}
+
 export interface BuildJobSummary {
   id: string;
   functionVersionId: string;
@@ -420,6 +425,13 @@ export async function listRegions(connection: ApiConnection): Promise<Region[]> 
 
 export async function listProjects(connection: ApiConnection): Promise<ProjectRecord[]> {
   return request<ProjectRecord[]>(connection, 'GET', '/v1/projects');
+}
+
+export async function createProject(connection: ApiConnection, input: CreateProjectInput): Promise<ProjectRecord> {
+  return request<ProjectRecord>(connection, 'POST', '/v1/projects', {
+    id: input.id?.trim() || undefined,
+    name: input.name,
+  });
 }
 
 export async function listDeployments(connection: ApiConnection, options?: ListDeploymentsOptions): Promise<DeploymentSummary[]> {

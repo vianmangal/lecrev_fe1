@@ -7,6 +7,7 @@ import {
   HTTPTrigger,
   LiveDeploymentRecord,
   ProjectRecord,
+  createProject as createBackendProject,
   createHTTPTrigger,
   createFunctionVersion,
   getBuildJob,
@@ -21,10 +22,12 @@ import {
   listDeployments,
   listProjects,
   listRegions,
+  normalizeEnvironment,
   sleep,
   summaryToDeploymentRow,
   toDeploymentRow,
 } from '../api';
+import { createGitHubDeploymentBinding } from '../lib/github-app';
 import { Deployment, Project } from '../types';
 import {
   DEFAULT_CONNECTION,
@@ -122,7 +125,7 @@ export function useDashboardData() {
         setConnection((current) => ({
           baseUrl: current.baseUrl.trim() || payload.connection?.baseUrl?.trim() || DEFAULT_CONNECTION.baseUrl,
           apiKey: payload.connection?.apiKey?.trim() || '',
-          projectId: payload.connection?.projectId?.trim() || '',
+          projectId: current.projectId.trim() || payload.connection?.projectId?.trim() || '',
         }));
         setIntegrationError(null);
       })
@@ -165,6 +168,16 @@ export function useDashboardData() {
 
     if (projectsResult.status === 'fulfilled') {
       setBackendProjects(projectsResult.value);
+      setConnection((current) => {
+        const selectedProjectId = current.projectId.trim();
+        if (selectedProjectId && projectsResult.value.some((project) => project.id === selectedProjectId)) {
+          return current;
+        }
+        return {
+          ...current,
+          projectId: projectsResult.value[0]?.id ?? '',
+        };
+      });
     } else {
       setBackendProjects([]);
       nextError ??= projectsResult.reason instanceof Error ? projectsResult.reason.message : 'Unable to load projects.';
@@ -356,7 +369,7 @@ export function useDashboardData() {
     try {
       setIntegrationError(null);
       const conn = { ...connection };
-      if (!conn.apiKey.trim() || !conn.projectId.trim()) {
+      if (!conn.apiKey.trim() || !request.projectId.trim()) {
         throw new Error('Your Lecrev tenant connection is not ready yet. Refresh the page and try again.');
       }
       const version = await createFunctionVersion(conn, request);
@@ -389,6 +402,100 @@ export function useDashboardData() {
       throw err;
     }
   }, [connection, refreshCatalog, startExecution, trackBuildLifecycle]);
+
+  const handleGitHubDeploy = useCallback(async (input: {
+    installationId: number;
+    owner: string;
+    repo: string;
+    repoFullName: string;
+    gitUrl: string;
+    gitRef: string;
+    entrypoint: string;
+    projectId: string;
+    functionName: string;
+    environment: 'production' | 'staging' | 'preview';
+    region: string;
+  }) => {
+    try {
+      setIntegrationError(null);
+      const conn = { ...connection };
+      if (!conn.apiKey.trim()) {
+        throw new Error('Your Lecrev tenant connection is not ready yet. Refresh the page and try again.');
+      }
+      if (!input.projectId.trim()) {
+        throw new Error('Select a project before deploying from GitHub.');
+      }
+
+      const response = await createGitHubDeploymentBinding({
+        installationId: input.installationId,
+        owner: input.owner,
+        repo: input.repo,
+        repoFullName: input.repoFullName,
+        gitUrl: input.gitUrl,
+        gitRef: input.gitRef,
+        entrypoint: input.entrypoint,
+        projectId: input.projectId,
+        functionName: input.functionName,
+        environment: input.environment,
+        region: input.region,
+        autoDeploy: true,
+        deployNow: true,
+      });
+      if (!response.deployment?.functionVersionId) {
+        throw new Error('GitHub deployment binding was created, but no deployment was started.');
+      }
+
+      const version = await getFunctionVersion(conn, response.deployment.functionVersionId);
+      setLiveDeployments((prev) => [
+        {
+          projectId: input.projectId,
+          environment: normalizeEnvironment(input.environment),
+          version,
+        },
+        ...prev.filter((record) => record.version.id !== version.id),
+      ]);
+
+      await refreshCatalog(conn);
+
+      if (response.deployment.buildJobId) {
+        void trackBuildLifecycle(conn, version.id, response.deployment.buildJobId);
+      } else if (version.state === 'ready') {
+        void ensureFunctionURL(conn, version.id).catch(() => undefined);
+        void startExecution(conn, version.id);
+      }
+
+      return {
+        versionId: version.id,
+        buildJobId: response.deployment.buildJobId,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'GitHub deployment failed.';
+      setIntegrationError(message);
+      throw err;
+    }
+  }, [connection, ensureFunctionURL, refreshCatalog, startExecution, trackBuildLifecycle]);
+
+  const handleCreateProject = useCallback(async (input: { id?: string; name: string }) => {
+    const conn = { ...connection };
+    if (!conn.apiKey.trim()) {
+      throw new Error('Your Lecrev tenant connection is not ready yet. Refresh the page and try again.');
+    }
+    const project = await createBackendProject(conn, input);
+    setConnection((current) => ({
+      ...current,
+      projectId: project.id,
+    }));
+    await refreshCatalog(conn);
+    return project;
+  }, [connection, refreshCatalog]);
+
+  const selectProject = useCallback((projectId: string) => {
+    setConnection((current) => ({
+      ...current,
+      projectId: projectId.trim(),
+    }));
+    setIntegrationError(null);
+  }, []);
 
   const deploymentRows = useMemo<Deployment[]>(() => {
     const map = new Map<string, Deployment>();
@@ -513,13 +620,18 @@ export function useDashboardData() {
     authRequired,
     projectRows,
     deploymentRows,
+    backendProjects,
+    selectedProjectId: connection.projectId,
     deploymentIDsByProject,
     ensureFunctionURL,
     loadFunctionURLs,
     handleDeploy,
+    handleGitHubDeploy,
+    handleCreateProject,
     handleSignOut,
     refreshCatalog,
     saveConnection,
+    selectProject,
     setIntegrationError,
     refetchSession,
   };

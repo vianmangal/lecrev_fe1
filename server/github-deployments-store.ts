@@ -52,6 +52,9 @@ const createRunsTableSQL = `
     repo_full_name text not null,
     git_ref text not null,
     commit_sha text not null,
+    event_type text not null,
+    environment text not null,
+    pr_number integer,
     function_version_id text not null,
     build_job_id text,
     state text not null,
@@ -156,11 +159,21 @@ function migrateRunsTable(): void {
     if (!columns.has('project_id')) {
       db.exec(`alter table github_deployment_runs add column project_id text not null default 'legacy';`);
     }
+    if (!columns.has('event_type')) {
+      db.exec(`alter table github_deployment_runs add column event_type text not null default 'push';`);
+    }
+    if (!columns.has('environment')) {
+      db.exec(`alter table github_deployment_runs add column environment text not null default 'production';`);
+    }
+    if (!columns.has('pr_number')) {
+      db.exec(`alter table github_deployment_runs add column pr_number integer;`);
+    }
   }
 
   db.exec(`
-    create unique index if not exists github_deployment_runs_binding_commit_idx
-      on github_deployment_runs(binding_id, commit_sha);
+    drop index if exists github_deployment_runs_binding_commit_idx;
+    create unique index if not exists github_deployment_runs_binding_commit_event_idx
+      on github_deployment_runs(binding_id, commit_sha, event_type, ifnull(pr_number, 0));
   `);
 }
 
@@ -255,6 +268,9 @@ export interface GitHubDeploymentRun {
   repoFullName: string;
   gitRef: string;
   commitSha: string;
+  eventType: 'push' | 'pull_request';
+  environment: 'production' | 'staging' | 'preview';
+  prNumber?: number;
   functionVersionId: string;
   buildJobId?: string;
   state: 'pending' | 'succeeded' | 'failed';
@@ -276,6 +292,9 @@ export interface CreateGitHubDeploymentRunInput {
   repoFullName: string;
   gitRef: string;
   commitSha: string;
+  eventType: 'push' | 'pull_request';
+  environment: 'production' | 'staging' | 'preview';
+  prNumber?: number;
   functionVersionId: string;
   buildJobId?: string;
   statusContext: string;
@@ -333,6 +352,9 @@ function rowToRun(row: Record<string, unknown>): GitHubDeploymentRun {
     repoFullName: String(row.repo_full_name),
     gitRef: String(row.git_ref),
     commitSha: String(row.commit_sha),
+    eventType: String(row.event_type) as GitHubDeploymentRun['eventType'],
+    environment: String(row.environment) as GitHubDeploymentRun['environment'],
+    prNumber: row.pr_number === null || row.pr_number === undefined ? undefined : Number(row.pr_number),
     functionVersionId: String(row.function_version_id),
     buildJobId: row.build_job_id ? String(row.build_job_id) : undefined,
     state: String(row.state) as GitHubDeploymentRun['state'],
@@ -513,15 +535,24 @@ export function findBindingsForPush(installationId: number, owner: string, repo:
       and auto_deploy = 1
     order by updated_at desc
   `).all(installationId, owner, repo, gitRef) as Record<string, unknown>[];
-  return rows.map(rowToBinding);
+  return rows
+    .map(rowToBinding)
+    .filter((binding) => getGitHubUserConnection(binding.userId) !== null);
+}
+
+export function findBindingsForPreview(installationId: number, owner: string, repo: string, baseRef: string): GitHubRepoBinding[] {
+  return findBindingsForPush(installationId, owner, repo, baseRef);
 }
 
 export function createGitHubDeploymentRun(input: CreateGitHubDeploymentRunInput): GitHubDeploymentRun {
   const existing = db.prepare(`
     select *
     from github_deployment_runs
-    where binding_id = ? and commit_sha = ?
-  `).get(input.bindingId, input.commitSha) as Record<string, unknown> | undefined;
+    where binding_id = ?
+      and commit_sha = ?
+      and event_type = ?
+      and ifnull(pr_number, 0) = ifnull(?, 0)
+  `).get(input.bindingId, input.commitSha, input.eventType, input.prNumber ?? null) as Record<string, unknown> | undefined;
   if (existing) {
     return rowToRun(existing);
   }
@@ -541,6 +572,9 @@ export function createGitHubDeploymentRun(input: CreateGitHubDeploymentRunInput)
       repo_full_name,
       git_ref,
       commit_sha,
+      event_type,
+      environment,
+      pr_number,
       function_version_id,
       build_job_id,
       state,
@@ -548,7 +582,7 @@ export function createGitHubDeploymentRun(input: CreateGitHubDeploymentRunInput)
       target_url,
       created_at,
       updated_at
-    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     input.bindingId,
@@ -561,6 +595,9 @@ export function createGitHubDeploymentRun(input: CreateGitHubDeploymentRunInput)
     input.repoFullName,
     input.gitRef,
     input.commitSha,
+    input.eventType,
+    input.environment,
+    input.prNumber ?? null,
     input.functionVersionId,
     input.buildJobId ?? null,
     'pending',

@@ -1,17 +1,33 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ApiConnection, DeployRequestInput, LiveDeploymentRecord } from './api';
+import { ApiConnection, DeployRequestInput, LiveDeploymentRecord, ProjectRecord } from './api';
 import { DeployMode, DeployModePicker } from './components/deploy/DeployModePicker';
 import { FileDeployForm } from './components/deploy/FileDeployForm';
 import { FunctionDeployForm } from './components/deploy/FunctionDeployForm';
 import { GitHubDeployForm, GitHubDeploySubmission } from './components/deploy/GitHubDeployForm';
 import { DeploySuccess } from './components/deploy/DeploySuccess';
-import { registerGitHubDeploymentBinding } from './lib/github-app';
+import { CyanBtn, GhostBtn, SelectInput, TextInput } from './components/UI';
 
 interface DeployPageProps {
   onBack: () => void;
   onDeploy: (request: DeployRequestInput) => Promise<{ versionId: string; buildJobId?: string }>;
-  defaultProjectId: string;
+  onGitHubDeploy: (input: {
+    installationId: number;
+    owner: string;
+    repo: string;
+    repoFullName: string;
+    gitUrl: string;
+    gitRef: string;
+    entrypoint: string;
+    projectId: string;
+    functionName: string;
+    environment: 'production' | 'staging' | 'preview';
+    region: string;
+  }) => Promise<{ versionId: string; buildJobId?: string }>;
+  projects: ProjectRecord[];
+  selectedProjectId: string;
+  onSelectProject: (projectId: string) => void;
+  onCreateProject: (input: { id?: string; name: string }) => Promise<ProjectRecord>;
   regionOptions: string[];
   liveDeployments: LiveDeploymentRecord[];
   connection: ApiConnection;
@@ -19,7 +35,18 @@ interface DeployPageProps {
 
 const DEFAULT_HANDLER = "export async function handler(event, context) {\n  return { ok: true, echo: event, region: context.region, hostId: context.hostId };\n}\n";
 
-export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaultProjectId, regionOptions, liveDeployments, connection }) => {
+export const DeployPage: React.FC<DeployPageProps> = ({
+  onBack,
+  onDeploy,
+  onGitHubDeploy,
+  projects,
+  selectedProjectId,
+  onSelectProject,
+  onCreateProject,
+  regionOptions,
+  liveDeployments,
+  connection,
+}) => {
   const [mode, setMode] = useState<DeployMode | null>(null);
   const [dragging, setDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -30,6 +57,9 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
   const [error, setError] = useState<string | null>(null);
   const [deployInfo, setDeployInfo] = useState<{ versionId: string; buildJobId?: string } | null>(null);
   const [deployed, setDeployed] = useState(false);
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [projectName, setProjectName] = useState('');
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
 
   const liveDeployment = deployInfo
     ? liveDeployments.find((record) => record.version.id === deployInfo.versionId) ?? null
@@ -66,9 +96,9 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
     }
 
     const selectedRegion = region.trim() || regionOptions[0] || 'ap-south-1';
-    const cleanedProject = defaultProjectId.trim();
+    const cleanedProject = selectedProjectId.trim();
     if (!cleanedProject) {
-      throw new Error('Your tenant project is not ready yet. Refresh the page and try again.');
+      throw new Error('Create or select a project before deploying.');
     }
     const cleanedName = sanitizeName(mode === 'file' ? (file?.name || 'uploaded-function') : 'ui-function');
 
@@ -122,21 +152,11 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
     setIsSubmitting(true);
     try {
       const selectedRegion = region.trim() || regionOptions[0] || 'ap-south-1';
-      const cleanedProject = defaultProjectId.trim();
+      const cleanedProject = selectedProjectId.trim();
       if (!cleanedProject) {
-        throw new Error('Your tenant project is not ready yet. Refresh the page and try again.');
+        throw new Error('Create or select a project before deploying.');
       }
-      const request: DeployRequestInput = {
-        projectId: cleanedProject,
-        name: sanitizeName(submission.functionName || submission.repoFullName.replace(/\//g, '-')),
-        environment,
-        region: selectedRegion,
-        entrypoint: submission.entrypoint,
-        gitUrl: submission.gitUrl,
-        gitRef: submission.gitRef,
-      };
-      const info = await onDeploy(request);
-      await registerGitHubDeploymentBinding({
+      const info = await onGitHubDeploy({
         installationId: submission.installationId,
         owner: submission.owner,
         repo: submission.repo,
@@ -145,12 +165,9 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
         gitRef: submission.gitRef,
         entrypoint: submission.entrypoint,
         projectId: cleanedProject,
-        functionName: request.name,
+        functionName: sanitizeName(submission.functionName || submission.repoFullName.replace(/\//g, '-')),
         environment: environment.toLowerCase() as 'production' | 'staging' | 'preview',
         region: selectedRegion,
-        autoDeploy: true,
-        lastFunctionVersionId: info.versionId,
-        lastBuildJobId: info.buildJobId,
       });
       setDeployInfo(info);
       setDeployed(true);
@@ -161,6 +178,29 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
       setIsSubmitting(false);
     }
   };
+
+  const handleCreateProject = async () => {
+    const trimmedName = projectName.trim();
+    if (!trimmedName) {
+      setError('Enter a project name first.');
+      return;
+    }
+    setError(null);
+    setIsCreatingProject(true);
+    try {
+      const created = await onCreateProject({ name: trimmedName });
+      onSelectProject(created.id);
+      setProjectName('');
+      setCreatingProject(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to create project.');
+    } finally {
+      setIsCreatingProject(false);
+    }
+  };
+
+  const projectOptions = projects.map((project) => project.id);
+  const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
 
   if (deployed) {
     return (
@@ -190,6 +230,69 @@ export const DeployPage: React.FC<DeployPageProps> = ({ onBack, onDeploy, defaul
           Deploy Your Project
         </h2>
         <p className="text-[13px] text-sub">Choose a deployment method that works best for you.</p>
+      </div>
+
+      <div className="max-w-[640px] border border-border bg-surface/40 p-5 mb-10">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.15em] text-sub mb-1">Project</p>
+            <p className="text-[12px] text-muted">
+              {selectedProject ? `Deploying into ${selectedProject.name}` : 'Create a project or choose an existing one before deploying.'}
+            </p>
+          </div>
+          <GhostBtn
+            onClick={() => {
+              setCreatingProject((current) => !current);
+              setProjectName('');
+            }}
+            small
+          >
+            {creatingProject ? 'Close' : 'New Project'}
+          </GhostBtn>
+        </div>
+
+        {projectOptions.length > 0 ? (
+          <div className="mb-4">
+            <SelectInput
+              label="Target Project"
+              options={projectOptions}
+              value={selectedProjectId || projectOptions[0]}
+              onChange={onSelectProject}
+            />
+            {selectedProject && (
+              <p className="text-[11px] text-muted mt-2">Selected: {selectedProject.name}</p>
+            )}
+          </div>
+        ) : (
+          <p className="text-[12px] text-amber-300 mb-4">No projects exist for this tenant yet.</p>
+        )}
+
+        {creatingProject && (
+          <div className="border border-border p-4 bg-black/20">
+            <div className="mb-4">
+              <TextInput
+                label="Project Name"
+                placeholder="my-next-project"
+                value={projectName}
+                onChange={setProjectName}
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <CyanBtn onClick={() => void handleCreateProject()} disabled={isCreatingProject}>
+                {isCreatingProject ? 'Creating…' : 'Create Project'}
+              </CyanBtn>
+              <GhostBtn
+                onClick={() => {
+                  setCreatingProject(false);
+                  setProjectName('');
+                }}
+                disabled={isCreatingProject}
+              >
+                Cancel
+              </GhostBtn>
+            </div>
+          </div>
+        )}
       </div>
 
       <AnimatePresence mode="wait">

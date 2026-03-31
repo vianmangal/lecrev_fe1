@@ -37,12 +37,17 @@ export default function App() {
     authRequired,
     projectRows,
     deploymentRows,
+    backendProjects,
+    selectedProjectId,
     deploymentIDsByProject,
     ensureFunctionURL,
     handleDeploy,
+    handleGitHubDeploy,
+    handleCreateProject,
     handleSignOut,
     loadFunctionURLs,
     saveConnection,
+    selectProject,
     refetchSession,
   } = useDashboardData();
   const [detailFunctionURLs, setDetailFunctionURLs] = useState<HTTPTrigger[]>([]);
@@ -246,7 +251,11 @@ export default function App() {
                     key="deploy"
                     onBack={() => go('deployments')}
                     onDeploy={handleDeploy}
-                    defaultProjectId={connection.projectId}
+                    onGitHubDeploy={handleGitHubDeploy}
+                    projects={backendProjects}
+                    selectedProjectId={selectedProjectId}
+                    onSelectProject={selectProject}
+                    onCreateProject={handleCreateProject}
                     regionOptions={availableRegions}
                     liveDeployments={liveDeployments}
                     connection={connection}
