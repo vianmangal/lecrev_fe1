@@ -160,6 +160,23 @@ export interface HTTPTrigger {
   createdAt: string;
 }
 
+export interface FunctionWarmRegionStatus {
+  region: string;
+  state: string;
+  availableHosts: number;
+  availableFullNetworkSlots: number;
+  blankWarm: number;
+  functionWarm: number;
+  ready: boolean;
+  updatedAt?: string;
+}
+
+export interface FunctionWarmStatus {
+  functionVersionId: string;
+  ready: boolean;
+  regions: FunctionWarmRegionStatus[];
+}
+
 export interface DeploymentSummary {
   id: string;
   projectId: string;
@@ -451,6 +468,10 @@ export async function getJobOutput(connection: ApiConnection, jobId: string): Pr
 
 export async function listHTTPTriggers(connection: ApiConnection, versionId: string): Promise<HTTPTrigger[]> {
   return request<HTTPTrigger[]>(connection, 'GET', `/v1/functions/${versionId}/triggers/http`);
+}
+
+export async function getFunctionWarmStatus(connection: ApiConnection, versionId: string): Promise<FunctionWarmStatus> {
+  return request<FunctionWarmStatus>(connection, 'GET', `/v1/functions/${versionId}/warm-status`);
 }
 
 export async function createHTTPTrigger(

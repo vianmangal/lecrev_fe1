@@ -12,6 +12,7 @@ import {
   getBuildJob,
   getBuildJobLogs,
   getFunctionVersion,
+  getFunctionWarmStatus,
   getJob,
   getJobLogs,
   getJobOutput,
@@ -283,6 +284,24 @@ export function useDashboardData() {
     }
   }, [patchLiveDeployment, refreshCatalog, trackExecutionLifecycle]);
 
+  const waitForFunctionWarmReady = useCallback(async (conn: ApiConnection, versionId: string) => {
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      const status = await getFunctionWarmStatus(conn, versionId);
+      if (status.ready) {
+        return status;
+      }
+
+      const hasActiveTargetRegion = status.regions.some((region) => region.state === 'active');
+      if (!hasActiveTargetRegion) {
+        return status;
+      }
+
+      await sleep(350);
+    }
+    return null;
+  }, []);
+
   const trackBuildLifecycle = useCallback(async (conn: ApiConnection, versionId: string, buildJobId: string) => {
     let lastBuildState: LiveDeploymentRecord['buildJob'];
     let lastVersionState: LiveDeploymentRecord['version'] | undefined;
@@ -320,6 +339,7 @@ export function useDashboardData() {
       }
 
       await ensureFunctionURL(conn, versionId).catch(() => null);
+      await waitForFunctionWarmReady(conn, versionId).catch(() => null);
 
       await startExecution(conn, versionId);
     } catch (err) {
@@ -330,7 +350,7 @@ export function useDashboardData() {
     } finally {
       await refreshCatalog(conn);
     }
-  }, [patchLiveDeployment, refreshCatalog, startExecution]);
+  }, [ensureFunctionURL, patchLiveDeployment, refreshCatalog, startExecution, waitForFunctionWarmReady]);
 
   const handleDeploy = useCallback(async (request: DeployRequestInput) => {
     try {

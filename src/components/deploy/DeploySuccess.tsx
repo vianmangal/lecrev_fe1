@@ -148,6 +148,7 @@ export function DeploySuccess({
     effectiveJob?.state === 'failed',
   );
   const isActive = effectiveJob?.state === 'succeeded';
+  const isWarmPending = !effectiveJob && effectiveBuildJob?.state === 'succeeded' && effectiveVersion?.state === 'ready';
 
   const statusLabel = hasFailed
     ? 'Deployment Failed'
@@ -155,7 +156,9 @@ export function DeploySuccess({
       ? 'Deployment Active'
       : effectiveJob
         ? 'Executing Function'
-        : effectiveBuildJob || effectiveVersion?.state === 'building'
+        : isWarmPending
+          ? 'Warming Function'
+          : effectiveBuildJob || effectiveVersion?.state === 'building'
           ? 'Building Deployment'
           : 'Deployment Queued';
 
@@ -171,7 +174,7 @@ export function DeploySuccess({
   const statusRows: Array<[string, string]> = [
     ['Build', effectiveBuildJob?.state ?? 'queued'],
     ['Version', effectiveVersion?.state ?? 'queued'],
-    ['Execution', effectiveJob?.state ?? 'waiting'],
+    ['Execution', effectiveJob?.state ?? (isWarmPending ? 'warming' : 'waiting')],
     ...(effectiveJob?.result?.latencyMs ? [['Latency', `${effectiveJob.result.latencyMs} ms`] as [string, string]] : []),
   ];
 
@@ -236,7 +239,7 @@ export function DeploySuccess({
               <p className="text-sm text-sub">
                 {effectiveVersion?.state === 'ready'
                   ? 'Generating function URL…'
-                  : 'Function URL will be created once the build is ready.'}
+                  : 'Function URL will be created once the build and warm preparation are ready.'}
               </p>
             )}
           </div>
@@ -266,7 +269,7 @@ export function DeploySuccess({
         </div>
       ) : (
         <div className="border border-border px-4 py-5 mb-8 text-[11px] text-sub">
-          Waiting for build or execution logs…
+          {isWarmPending ? 'Waiting for warm preparation to finish before the first execution…' : 'Waiting for build or execution logs…'}
         </div>
       )}
 
