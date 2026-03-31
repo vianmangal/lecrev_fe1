@@ -12,14 +12,6 @@ export function ProjectList({ projects, onViewProject }: ProjectListProps) {
   if (projects.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-center">
-        <div className="w-16 h-16 rounded-full border border-border flex items-center justify-center mb-4">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-muted">
-            <rect x="3" y="3" width="7" height="7" />
-            <rect x="14" y="3" width="7" height="7" />
-            <rect x="3" y="14" width="7" height="7" />
-            <rect x="14" y="14" width="7" height="7" />
-          </svg>
-        </div>
         <p className="text-[13px] text-white mb-1">No projects yet</p>
         <p className="text-[11px] text-sub">Deploy your first project to get started</p>
       </div>

@@ -7,19 +7,29 @@ interface SidebarProps {
   onToggleExpanded: () => void;
   screen: 'projects' | 'deployments' | 'settings' | 'detail' | 'deploy';
   onNavigate: (screen: 'projects' | 'deployments' | 'settings') => void;
+  onLogoClick?: () => void;
   mobileOpen?: boolean;
   onMobileToggle?: () => void;
 }
 
-export function Sidebar({ expanded, onToggleExpanded, screen, onNavigate, mobileOpen = false, onMobileToggle }: SidebarProps) {
+export function Sidebar({ expanded, onToggleExpanded, screen, onNavigate, onLogoClick, mobileOpen = false, onMobileToggle }: SidebarProps) {
   const handleNavigate = (nextScreen: 'projects' | 'deployments' | 'settings') => {
     onNavigate(nextScreen);
     onMobileToggle?.();
   };
 
+  const handleLogoClick = () => {
+    onLogoClick?.();
+    onMobileToggle?.();
+  };
+
   const sidebarContent = (
     <>
-      <div className={`px-4 mb-10 flex items-center ${expanded ? 'gap-3' : 'justify-center'}`}>
+      <button
+        onClick={handleLogoClick}
+        className={`mb-10 flex items-center bg-transparent border-none text-white cursor-pointer ${expanded ? 'px-4 gap-3' : 'mx-auto h-10 w-10 justify-center rounded-xl p-0 hover:bg-white/5'}`}
+        aria-label="Go to main page"
+      >
         <div className="text-white shrink-0">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M2 4L12 21L22 4H2Z" fill="currentColor" />
@@ -38,9 +48,9 @@ export function Sidebar({ expanded, onToggleExpanded, screen, onNavigate, mobile
             </motion.span>
           )}
         </AnimatePresence>
-      </div>
+      </button>
 
-      <div className="flex-1 flex flex-col gap-2 px-3">
+      <div className={`flex-1 flex flex-col gap-2 ${expanded ? 'px-3' : 'px-2'}`}>
         <SideItem
           active={screen === 'projects' || screen === 'detail'}
           onClick={() => handleNavigate('projects')}
@@ -73,7 +83,7 @@ export function Sidebar({ expanded, onToggleExpanded, screen, onNavigate, mobile
         />
       </div>
 
-      <div className="mt-auto flex flex-col gap-2 px-3">
+      <div className={`mt-auto flex flex-col gap-2 ${expanded ? 'px-3' : 'px-2'}`}>
         <SideItem
           active={screen === 'settings'}
           onClick={() => handleNavigate('settings')}
@@ -88,7 +98,7 @@ export function Sidebar({ expanded, onToggleExpanded, screen, onNavigate, mobile
         />
         <button
           onClick={onToggleExpanded}
-          className="hidden md:flex items-center gap-3 p-3 rounded-lg hover:bg-white/5 transition-colors text-muted hover:text-white"
+          className={`hidden md:flex items-center rounded-xl transition-colors text-muted hover:text-white ${expanded ? 'gap-3 p-3 hover:bg-white/5' : 'mx-auto h-10 w-10 justify-center p-0 hover:bg-white/5'}`}
         >
           <svg
             width="20"
@@ -170,13 +180,18 @@ function SideItem({
   label: string;
   icon: React.ReactNode;
 }) {
+  const baseClass = expanded
+    ? 'w-full justify-start gap-3 px-3 py-3 rounded-xl'
+    : 'mx-auto h-10 w-10 justify-center p-0 rounded-xl';
+
+  const stateClass = active
+    ? 'border border-cyan-primary/25 bg-cyan-primary/10 text-cyan-primary'
+    : 'border border-transparent text-muted hover:bg-white/5 hover:text-white';
+
   return (
     <button
       onClick={onClick}
-      className={`
-        flex items-center gap-3 p-3 rounded-lg transition-all duration-150 cursor-pointer
-        ${active ? 'bg-cyan-primary/10 text-cyan-primary' : 'text-muted hover:bg-white/5 hover:text-white'}
-      `}
+      className={`flex items-center transition-all duration-150 cursor-pointer ${baseClass} ${stateClass}`}
     >
       <div className="shrink-0">{icon}</div>
       {expanded && (

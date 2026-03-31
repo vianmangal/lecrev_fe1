@@ -74,18 +74,26 @@ export function LandingPage({ onSignIn }: LandingPageProps) {
     };
   }, [typingComplete]);
 
+  const handleMainLogoClick = () => {
+    window.location.href = '/';
+  };
+
   return (
     <div className="min-h-dvh bg-bg text-white font-sans">
       <header className="fixed top-0 left-0 right-0 z-50 px-4 sm:px-6 lg:px-8 py-4 sm:py-5">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2.5 text-white">
+          <button
+            onClick={handleMainLogoClick}
+            className="flex items-center gap-2.5 text-white bg-transparent border-none cursor-pointer"
+            aria-label="Go to main page"
+          >
             <span className="shrink-0">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M2 4L12 21L22 4H2Z" fill="currentColor" />
               </svg>
             </span>
             <span className="font-black text-base tracking-tighter whitespace-nowrap uppercase">LECREV</span>
-          </div>
+          </button>
           <button
             onClick={onSignIn}
             className="rounded-full bg-cyan-primary px-4 sm:px-5 py-2 text-[10px] font-bold uppercase tracking-[0.15em] text-black transition-colors duration-150 hover:bg-cyan-hover"

@@ -180,6 +180,7 @@ export default function App() {
             onToggleExpanded={() => setSidebarExpanded((current) => !current)}
             screen={screen}
             onNavigate={(nextScreen) => go(nextScreen)}
+            onLogoClick={() => go('projects')}
             mobileOpen={mobileMenuOpen}
             onMobileToggle={() => setMobileMenuOpen((current) => !current)}
           />

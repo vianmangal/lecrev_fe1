@@ -52,7 +52,12 @@ export function Header({
               >
                 ←
               </button>
-              <span className="hidden sm:inline opacity-50">Projects</span>
+              <button
+                onClick={onNavigateProjects}
+                className="hidden sm:inline text-sub opacity-50 hover:opacity-100 hover:text-white transition-colors bg-transparent border-none cursor-pointer p-0"
+              >
+                Projects
+              </button>
               <span className="hidden sm:inline opacity-30">/</span>
               <span className="text-white font-medium truncate max-w-[120px] sm:max-w-none">{activeProject.name}</span>
             </motion.div>

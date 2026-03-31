@@ -18,16 +18,6 @@ export function DeploymentTable({ deployments, emptyLabel, limit }: DeploymentTa
   if (rows.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-48 text-center">
-        <div className="w-14 h-14 rounded-full border border-border flex items-center justify-center mb-4">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-muted">
-            <line x1="8" y1="6" x2="21" y2="6" />
-            <line x1="8" y1="12" x2="21" y2="12" />
-            <line x1="8" y1="18" x2="21" y2="18" />
-            <line x1="3" y1="6" x2="3.01" y2="6" />
-            <line x1="3" y1="12" x2="3.01" y2="12" />
-            <line x1="3" y1="18" x2="3.01" y2="18" />
-          </svg>
-        </div>
         <p className="text-[12px] text-sub">{emptyLabel}</p>
       </div>
     );

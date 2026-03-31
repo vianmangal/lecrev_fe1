@@ -46,7 +46,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ settingsTab, set
               initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
-            ><SettingsPlaceholderPanel kind="team" /></motion.div>
+            ><SettingsPlaceholderPanel kind="team" scopeKey={connection.projectId || 'default'} /></motion.div>
           )}
           {settingsTab === 'domains' && (
             <motion.div
@@ -54,7 +54,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ settingsTab, set
               initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
-            ><SettingsPlaceholderPanel kind="domains" /></motion.div>
+            ><SettingsPlaceholderPanel kind="domains" scopeKey={connection.projectId || 'default'} /></motion.div>
           )}
           {settingsTab === 'api_keys' && (
             <motion.div
