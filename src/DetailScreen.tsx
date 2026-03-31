@@ -61,7 +61,7 @@ export const DetailScreen: React.FC<DetailScreenProps> = ({
             {project.url}
           </h2>
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.15em] text-cyan-primary">
-            <div className="w-1.5 h-1.5 rounded-full bg-cyan-primary animate-pulse-cyan" />
+            <div className="w-1.5 h-1.5 rounded-full bg-cyan-primary" />
             System Online
           </div>
         </div>
